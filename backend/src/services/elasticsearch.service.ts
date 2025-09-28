@@ -240,7 +240,10 @@ export const searchEmails = async (query: string, filters?: SearchFilters) => {
         body: searchBody
     });
 
-    return result.hits.hits.map(hit => hit._source);
+    return result.hits.hits.map(hit => ({
+        id: hit._id as string,
+        ...(hit._source as any)
+    }));
 };
 
 export const getEmailById = async (id: string) => {
@@ -249,7 +252,10 @@ export const getEmailById = async (id: string) => {
         id
     });
 
-    return result._source;
+    return {
+        id: result._id as string,
+        ...(result._source as any)
+    };
 };
 
 export const getCategoryStats = async () => {
@@ -294,7 +300,10 @@ export const getUncategorizedEmails = async () => {
         }
     });
 
-    return result.hits.hits.map(hit => hit._source);
+    return result.hits.hits.map(hit => ({
+        id: hit._id as string,
+        ...(hit._source as any)
+    }));
 };
 
 export const categorizeEmailById = async (emailId: string) => {

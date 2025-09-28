@@ -15,8 +15,10 @@
   "description": "",
   "dependencies": {
     "@elastic/elasticsearch": "^8.10.0",
+    "@types/cors": "^2.8.19",
     "@types/node": "^24.0.14",
     "axios": "^1.10.0",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "imapflow": "^1.0.191",
