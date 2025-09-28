@@ -1,6 +1,5 @@
-import { Router, Request, Response } from 'express';
-import { addTrainingData, createTrainingIndex } from '../../services/rag-suggestion-services/vector-store.service';
-import { TrainingData } from '../../services/rag-suggestion-services/vector-store.service';
+import { Router } from 'express';
+import { addTrainingData } from '../../controllers/rag-suggestion/training.controller';
 
 const router = Router();
 
@@ -33,16 +32,6 @@ const router = Router();
  *       '500':
  *         description: Server error
  */
-router.post('/', async (req: Request, res: Response) => {
-    try {
-        await createTrainingIndex();
-        const trainingData: TrainingData = req.body;
-        await addTrainingData(trainingData);
-        res.json({ message: 'Training data added successfully' });
-    } catch (error) {
-        console.error('Failed to add training data:', error);
-        res.status(500).json({ error: 'Failed to add training data' });
-    }
-});
+router.post('/', addTrainingData);
 
 export default router;

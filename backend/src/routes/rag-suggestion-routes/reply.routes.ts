@@ -1,6 +1,5 @@
-import { Router, Request, Response } from 'express';
-import { getEmailById, type EmailDocument } from '../../services/elasticsearch.service';
-import { generateReplySuggestion } from '../../services/rag-suggestion-services/reply-suggestion.service';
+import { Router } from 'express';
+import { suggestReply } from '../../controllers/rag-suggestion/reply.controller';
 
 const router = Router();
 
@@ -39,27 +38,6 @@ const router = Router();
  *       '500':
  *         description: Server error
  */
-router.get('/:id/suggest-reply', async (req: Request, res: Response) => {
-    try {
-        const email = await getEmailById(req.params.id) as EmailDocument;
-
-        if (!email) {
-            return res.status(404).json({ error: 'Email not found' });
-        }
-
-        const suggestion = await generateReplySuggestion(email);
-        if (!suggestion) {
-            return res.json({
-                suggestion: null,
-                message: 'No relevant training data found for this email type'
-            });
-        }
-
-        res.json(suggestion);
-    } catch (error) {
-        console.error('Failed to generate reply suggestion:', error);
-        res.status(500).json({ error: 'Failed to generate reply suggestion' });
-    }
-});
+router.get('/:id/suggest-reply', suggestReply);
 
 export default router;

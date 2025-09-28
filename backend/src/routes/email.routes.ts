@@ -1,6 +1,14 @@
-import { Router, Request, Response } from 'express';
-import { searchEmails, getEmailById, getCategoryStats, getUncategorizedEmails, categorizeEmailById } from '../services/elasticsearch.service';
-import { startBatchCategorization, isBatchCategorizationRunning } from '../services/batch-categorization.service';
+import { Router } from 'express';
+import {
+    searchEmails,
+    getAllEmails,
+    getEmailById,
+    getUncategorizedEmails,
+    categorizeEmail,
+    getCategoryStats,
+    startBatchCategorization,
+    getBatchCategorizationStatus
+} from '../controllers/email.controller';
 
 const router = Router();
 
@@ -121,23 +129,7 @@ const router = Router();
  *       '500':
  *         description: Server error
  */
-router.get('/search', async (req: Request, res: Response) => {
-    try {
-        const { q, account, folder, category } = req.query;
-        const emails = await searchEmails(
-            q as string,
-            {
-                account: account as string,
-                folder: folder as string,
-                category: category as string
-            }
-        );
-        res.json(emails);
-    } catch (error) {
-        console.error('Search failed:', error);
-        res.status(500).json({ error: 'Search failed' });
-    }
-});
+router.get('/search', searchEmails);
 
 /**
  * @openapi
@@ -157,15 +149,7 @@ router.get('/search', async (req: Request, res: Response) => {
  *               items:
  *                 $ref: '#/components/schemas/Email'
  */
-router.get('/uncategorized', async (req: Request, res: Response) => {
-    try {
-        const emails = await getUncategorizedEmails();
-        res.json(emails);
-    } catch (error) {
-        console.error('Failed to fetch uncategorized emails:', error);
-        res.status(500).json({ error: 'Failed to fetch uncategorized emails' });
-    }
-});
+router.get('/uncategorized', getUncategorizedEmails);
 
 /**
  * @openapi
@@ -199,18 +183,7 @@ router.get('/uncategorized', async (req: Request, res: Response) => {
  *       '500':
  *         description: Categorization failed.
  */
-router.post('/:id/categorize', async (req: Request, res: Response) => {
-    try {
-        const result = await categorizeEmailById(req.params.id);
-        if (!result) {
-            return res.status(500).json({ error: 'Categorization failed' });
-        }
-        res.json(result);
-    } catch (error) {
-        console.error(`Failed to categorize email ${req.params.id}:`, error);
-        res.status(404).json({ error: 'Email not found or categorization failed' });
-    }
-});
+router.post('/:id/categorize', categorizeEmail);
 
 /**
  * @openapi
@@ -249,20 +222,7 @@ router.post('/:id/categorize', async (req: Request, res: Response) => {
  *       '500':
  *         description: Server error
  */
-router.get('/', async (req: Request, res: Response) => {
-    try {
-        const { account, folder, category } = req.query;
-        const emails = await searchEmails('', {
-            account: account as string,
-            folder: folder as string,
-            category: category as string
-        });
-        res.json(emails);
-    } catch (error) {
-        console.error('Failed to fetch emails:', error);
-        res.status(500).json({ error: 'Failed to fetch emails' });
-    }
-});
+router.get('/', getAllEmails);
 
 /**
  * @openapi
@@ -284,15 +244,7 @@ router.get('/', async (req: Request, res: Response) => {
  *       '500':
  *         description: Server error
  */
-router.get('/stats/categories', async (req: Request, res: Response) => {
-    try {
-        const stats = await getCategoryStats();
-        res.json(stats);
-    } catch (error) {
-        console.error('Failed to fetch category stats:', error);
-        res.status(500).json({ error: 'Failed to fetch category stats' });
-    }
-});
+router.get('/stats/categories', getCategoryStats);
 
 /**
  * @openapi
@@ -318,27 +270,7 @@ router.get('/stats/categories', async (req: Request, res: Response) => {
  *       '500':
  *         description: Server error
  */
-router.post('/batch-categorize', async (req: Request, res: Response) => {
-    try {
-        if (isBatchCategorizationRunning()) {
-            res.json({
-                status: 'already_running',
-                message: 'Batch categorization is already in progress'
-            });
-        } else {
-            startBatchCategorization().catch(err => {
-                console.error('Batch categorization error:', err);
-            });
-            res.json({
-                status: 'started',
-                message: 'Batch categorization started successfully'
-            });
-        }
-    } catch (error) {
-        console.error('Failed to start batch categorization:', error);
-        res.status(500).json({ error: 'Failed to start batch categorization' });
-    }
-});
+router.post('/batch-categorize', startBatchCategorization);
 
 /**
  * @openapi
@@ -361,20 +293,7 @@ router.post('/batch-categorize', async (req: Request, res: Response) => {
  *                 uncategorizedCount:
  *                   type: integer
  */
-router.get('/batch-categorize/status', async (req: Request, res: Response) => {
-    try {
-        const isRunning = isBatchCategorizationRunning();
-        const uncategorizedEmails = await getUncategorizedEmails();
-
-        res.json({
-            isRunning,
-            uncategorizedCount: uncategorizedEmails.length
-        });
-    } catch (error) {
-        console.error('Failed to get batch status:', error);
-        res.status(500).json({ error: 'Failed to get batch status' });
-    }
-});
+router.get('/batch-categorize/status', getBatchCategorizationStatus);
 
 /**
  * @openapi
@@ -403,14 +322,6 @@ router.get('/batch-categorize/status', async (req: Request, res: Response) => {
  *       '500':
  *         description: Server error
  */
-router.get('/:id', async (req: Request, res: Response) => {
-    try {
-        const email = await getEmailById(req.params.id);
-        res.json(email);
-    } catch (error) {
-        console.error(`Email not found for id: ${req.params.id}`, error);
-        res.status(404).json({ error: 'Email not found' });
-    }
-});
+router.get('/:id', getEmailById);
 
 export default router;
