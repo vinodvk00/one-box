@@ -79,3 +79,34 @@ export interface ApiError {
 export type EmailListResponse = EmailDocument[];
 
 export type EmailResponse = EmailDocument;
+
+// OAuth and Account Management Types
+export interface AccountConfig {
+  id: string;
+  email: string;
+  authType: 'imap' | 'oauth';
+  isActive: boolean;
+  syncStatus: 'idle' | 'syncing' | 'error' | 'disconnected';
+  createdAt: string;
+  lastSyncAt?: string;
+  tokenValid?: boolean;
+}
+
+export interface ConnectedAccountsResponse {
+  accounts: AccountConfig[];
+  total: number;
+}
+
+export interface OAuthCallbackResponse {
+  success: boolean;
+  message: string;
+  email: string;
+  authType: 'oauth';
+}
+
+export interface AccountActionResponse {
+  success: boolean;
+  message: string;
+  email?: string;
+  isActive?: boolean;
+}

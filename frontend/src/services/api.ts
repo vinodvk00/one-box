@@ -10,6 +10,9 @@ import type {
   CategoryStats,
   BatchCategorizationStatus,
   ApiError,
+  ConnectedAccountsResponse,
+  AccountConfig,
+  AccountActionResponse,
 } from "@/types/email";
 
 const API_BASE_URL =
@@ -150,6 +153,38 @@ export const trainingApi = {
   },
 };
 
+export const authApi = {
+  initiateGmailOAuth: (): void => {
+    window.location.href = `${API_BASE_URL}/auth/gmail/connect`;
+  },
+
+  getConnectedAccounts: async (): Promise<ConnectedAccountsResponse> => {
+    const response = await apiClient.get<ConnectedAccountsResponse>("/auth/accounts");
+    return handleResponse(response);
+  },
+
+  getAccountDetails: async (email: string): Promise<AccountConfig> => {
+    const response = await apiClient.get<AccountConfig>(
+      `/auth/accounts/${encodeURIComponent(email)}`
+    );
+    return handleResponse(response);
+  },
+
+  disconnectAccount: async (email: string): Promise<AccountActionResponse> => {
+    const response = await apiClient.delete<AccountActionResponse>(
+      `/auth/accounts/${encodeURIComponent(email)}`
+    );
+    return handleResponse(response);
+  },
+
+  toggleAccountStatus: async (email: string): Promise<AccountActionResponse> => {
+    const response = await apiClient.patch<AccountActionResponse>(
+      `/auth/accounts/${encodeURIComponent(email)}/toggle`
+    );
+    return handleResponse(response);
+  },
+};
+
 export const healthApi = {
   checkHealth: async (): Promise<{ status: string; message: string }> => {
     const response = await apiClient.get<{ status: string; message: string }>(
@@ -163,6 +198,7 @@ const api = {
   emails: emailApi,
   replies: replyApi,
   training: trainingApi,
+  auth: authApi,
   health: healthApi,
 };
 

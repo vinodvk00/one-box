@@ -6,6 +6,9 @@ const esClient = new Client({
     node: 'http://localhost:9200',
 });
 
+// Export the client for use in other services
+export { esClient as client };
+
 const EMAIL_INDEX = 'emails';
 
 export interface EmailDocument {
