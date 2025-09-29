@@ -1,27 +1,26 @@
-import { client } from './elasticsearch.service';
+import { client as getClient } from './elasticsearch.service';
 import { OAuthTokenDocument, AccountConfigDocument } from '../types/auth.types';
 
 const OAUTH_TOKENS_INDEX = 'oauth_tokens';
 const ACCOUNT_CONFIGS_INDEX = 'account_configs';
 
 export const createOAuthTokensIndex = async (): Promise<void> => {
+    const client = getClient();
     const indexExists = await client.indices.exists({ index: OAUTH_TOKENS_INDEX });
 
     if (!indexExists) {
         await client.indices.create({
             index: OAUTH_TOKENS_INDEX,
-            body: {
-                mappings: {
-                    properties: {
-                        id: { type: 'keyword' },
-                        email: { type: 'keyword' },
-                        accessToken: { type: 'text', index: false },
-                        refreshToken: { type: 'text', index: false },
-                        tokenExpiry: { type: 'date' },
-                        scope: { type: 'keyword' },
-                        createdAt: { type: 'date' },
-                        lastUsed: { type: 'date' }
-                    }
+            mappings: {
+                properties: {
+                    id: { type: 'keyword' },
+                    email: { type: 'keyword' },
+                    accessToken: { type: 'text', index: false },
+                    refreshToken: { type: 'text', index: false },
+                    tokenExpiry: { type: 'date' },
+                    scope: { type: 'keyword' },
+                    createdAt: { type: 'date' },
+                    lastUsed: { type: 'date' }
                 }
             }
         });
@@ -30,26 +29,44 @@ export const createOAuthTokensIndex = async (): Promise<void> => {
 };
 
 export const storeOAuthTokens = async (tokenDoc: OAuthTokenDocument): Promise<void> => {
+    const client = getClient();
     await client.index({
         index: OAUTH_TOKENS_INDEX,
         id: tokenDoc.id,
-        body: tokenDoc
+        document: tokenDoc,
+        refresh: 'wait_for'
     });
 };
 
 export const getOAuthTokens = async (email: string): Promise<OAuthTokenDocument | null> => {
     try {
+        const client = getClient();
+        const documentId = `oauth_${email}`;
+
+        try {
+            const directResult = await client.get({
+                index: OAUTH_TOKENS_INDEX,
+                id: documentId
+            });
+
+            if (directResult._source) {
+                return directResult._source as OAuthTokenDocument;
+            }
+        } catch (directError: any) {
+            console.log(`No direct document found for ID ${documentId}, falling back to search by email.`);
+        }
+
         const response = await client.search({
             index: OAUTH_TOKENS_INDEX,
-            body: {
-                query: {
-                    term: { email: email }
-                }
+            query: {
+                term: { email: email }
             }
         });
 
         const hits = response.hits.hits;
-        if (hits.length === 0) return null;
+        if (hits.length === 0) {
+            return null;
+        }
 
         return hits[0]._source as OAuthTokenDocument;
     } catch (error) {
@@ -64,46 +81,43 @@ export const updateOAuthTokens = async (email: string, updates: Partial<OAuthTok
         throw new Error(`No OAuth tokens found for email: ${email}`);
     }
 
+    const client = getClient();
     await client.update({
         index: OAUTH_TOKENS_INDEX,
         id: existingTokens.id,
-        body: {
-            doc: {
-                ...updates,
-                lastUsed: new Date()
-            }
+        doc: {
+            ...updates,
+            lastUsed: new Date()
         }
     });
 };
 
 export const deleteOAuthTokens = async (email: string): Promise<void> => {
+    const client = getClient();
     await client.deleteByQuery({
         index: OAUTH_TOKENS_INDEX,
-        body: {
-            query: {
-                term: { email: email }
-            }
+        query: {
+            term: { email: email }
         }
     });
 };
 
 export const createAccountConfigsIndex = async (): Promise<void> => {
+    const client = getClient();
     const indexExists = await client.indices.exists({ index: ACCOUNT_CONFIGS_INDEX });
 
     if (!indexExists) {
         await client.indices.create({
             index: ACCOUNT_CONFIGS_INDEX,
-            body: {
-                mappings: {
-                    properties: {
-                        id: { type: 'keyword' },
-                        email: { type: 'keyword' },
-                        authType: { type: 'keyword' },
-                        isActive: { type: 'boolean' },
-                        createdAt: { type: 'date' },
-                        lastSyncAt: { type: 'date' },
-                        syncStatus: { type: 'keyword' }
-                    }
+            mappings: {
+                properties: {
+                    id: { type: 'keyword' },
+                    email: { type: 'keyword' },
+                    authType: { type: 'keyword' },
+                    isActive: { type: 'boolean' },
+                    createdAt: { type: 'date' },
+                    lastSyncAt: { type: 'date' },
+                    syncStatus: { type: 'keyword' }
                 }
             }
         });
@@ -112,21 +126,22 @@ export const createAccountConfigsIndex = async (): Promise<void> => {
 };
 
 export const storeAccountConfig = async (configDoc: AccountConfigDocument): Promise<void> => {
+    const client = getClient();
     await client.index({
         index: ACCOUNT_CONFIGS_INDEX,
         id: configDoc.id,
-        body: configDoc
+        document: configDoc,
+        refresh: 'wait_for'
     });
 };
 
 export const getAccountConfig = async (email: string): Promise<AccountConfigDocument | null> => {
     try {
+        const client = getClient();
         const response = await client.search({
             index: ACCOUNT_CONFIGS_INDEX,
-            body: {
-                query: {
-                    term: { email: email }
-                }
+            query: {
+                term: { email: email }
             }
         });
 
@@ -142,12 +157,11 @@ export const getAccountConfig = async (email: string): Promise<AccountConfigDocu
 
 export const getAllAccountConfigs = async (): Promise<AccountConfigDocument[]> => {
     try {
+        const client = getClient();
         const response = await client.search({
             index: ACCOUNT_CONFIGS_INDEX,
-            body: {
-                query: { match_all: {} },
-                size: 100
-            }
+            query: { match_all: {} },
+            size: 100
         });
 
         return response.hits.hits.map((hit: any) => hit._source as AccountConfigDocument);
@@ -163,36 +177,33 @@ export const updateAccountConfig = async (email: string, updates: Partial<Accoun
         throw new Error(`No account config found for email: ${email}`);
     }
 
+    const client = getClient();
     await client.update({
         index: ACCOUNT_CONFIGS_INDEX,
         id: existingConfig.id,
-        body: {
-            doc: updates
-        }
+        doc: updates
     });
 };
 
 export const deleteAccountConfig = async (email: string): Promise<void> => {
+    const client = getClient();
     await client.deleteByQuery({
         index: ACCOUNT_CONFIGS_INDEX,
-        body: {
-            query: {
-                term: { email: email }
-            }
+        query: {
+            term: { email: email }
         }
     });
 };
 
 export const getActiveAccountConfigs = async (): Promise<AccountConfigDocument[]> => {
     try {
+        const client = getClient();
         const response = await client.search({
             index: ACCOUNT_CONFIGS_INDEX,
-            body: {
-                query: {
-                    term: { isActive: true }
-                },
-                size: 100
-            }
+            query: {
+                term: { isActive: true }
+            },
+            size: 100
         });
 
         return response.hits.hits.map((hit: any) => hit._source as AccountConfigDocument);

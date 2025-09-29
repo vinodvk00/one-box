@@ -7,7 +7,9 @@ import {
     storeUserOAuthData,
     disconnectOAuthAccount,
     hasValidOAuthConnection,
-    validateTokens
+    validateTokens,
+    forceReconnectAccount,
+    cleanupInvalidTokens
 } from '../services/oauth.service';
 import {
     getAllAccountConfigs,
@@ -32,22 +34,20 @@ export const initiateGmailOAuth = async (req: Request, res: Response) => {
 };
 
 export const handleOAuthCallback = async (req: Request, res: Response) => {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
     try {
         const { code, error: oauthError } = req.query;
 
         if (oauthError) {
             console.error('OAuth error:', oauthError);
-            return res.status(400).json({
-                error: 'OAuth authorization failed',
-                message: `Google returned error: ${oauthError}`
-            });
+            const errorRedirectUrl = `${frontendUrl}/settings?oauth=error&message=${encodeURIComponent(`Google returned error: ${oauthError}`)}`;
+            return res.redirect(errorRedirectUrl);
         }
 
         if (!code || typeof code !== 'string') {
-            return res.status(400).json({
-                error: 'Missing authorization code',
-                message: 'No authorization code received from Google'
-            });
+            const errorRedirectUrl = `${frontendUrl}/settings?oauth=error&message=${encodeURIComponent('No authorization code received from Google')}`;
+            return res.redirect(errorRedirectUrl);
         }
 
         console.log('🔄 Processing OAuth callback...');
@@ -59,30 +59,22 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
         const existingConnection = await hasValidOAuthConnection(email);
         if (existingConnection) {
-            console.log(`⚠️  Account ${email} already connected`);
-            return res.status(400).json({
-                error: 'Account already connected',
-                message: `The account ${email} is already connected via OAuth`
-            });
+            console.log(`⚠️  Account ${email} already connected, updating tokens...`);
+            await disconnectOAuthAccount(email);
         }
 
         await storeUserOAuthData(email, tokens);
 
         console.log(`✅ OAuth connection established for ${email}`);
 
-        res.json({
-            success: true,
-            message: 'Gmail account connected successfully',
-            email,
-            authType: 'oauth'
-        });
+        const redirectUrl = `${frontendUrl}/settings?oauth=success&email=${encodeURIComponent(email)}`;
+        res.redirect(redirectUrl);
 
     } catch (error) {
         console.error('OAuth callback failed:', error);
-        res.status(500).json({
-            error: 'OAuth callback failed',
-            message: error instanceof Error ? error.message : 'Unknown error'
-        });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorRedirectUrl = `${frontendUrl}/settings?oauth=error&message=${encodeURIComponent(`OAuth callback failed: ${errorMessage}`)}`;
+        res.redirect(errorRedirectUrl);
     }
 };
 
@@ -234,6 +226,69 @@ export const toggleAccountStatus = async (req: Request, res: Response) => {
         console.error('Failed to toggle account status:', error);
         res.status(500).json({
             error: 'Failed to toggle account status',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+};
+
+export const forceReconnectOAuth = async (req: Request, res: Response) => {
+    try {
+        const { email } = req.params;
+
+        if (!email) {
+            return res.status(400).json({
+                error: 'Email parameter required'
+            });
+        }
+
+        const account = await getAccountConfig(email);
+
+        if (!account) {
+            return res.status(404).json({
+                error: 'Account not found'
+            });
+        }
+
+        if (account.authType !== 'oauth') {
+            return res.status(400).json({
+                error: 'Cannot force reconnect IMAP accounts',
+                message: 'IMAP accounts are managed via environment variables'
+            });
+        }
+
+        const authUrl = await forceReconnectAccount(email);
+
+        console.log(`🔄 Force reconnect initiated for ${email}`);
+
+        res.json({
+            success: true,
+            message: `Force reconnect initiated for ${email}`,
+            authUrl,
+            redirectToAuth: true
+        });
+    } catch (error) {
+        console.error('Failed to force reconnect account:', error);
+        res.status(500).json({
+            error: 'Failed to force reconnect account',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+};
+
+export const cleanupInvalidOAuthTokens = async (req: Request, res: Response) => {
+    try {
+        console.log('🧹 Cleanup invalid OAuth tokens requested');
+
+        await cleanupInvalidTokens();
+
+        res.json({
+            success: true,
+            message: 'Invalid OAuth tokens cleanup completed successfully'
+        });
+    } catch (error) {
+        console.error('Failed to cleanup invalid OAuth tokens:', error);
+        res.status(500).json({
+            error: 'Failed to cleanup invalid OAuth tokens',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }

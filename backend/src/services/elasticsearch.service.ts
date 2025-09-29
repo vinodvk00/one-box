@@ -2,12 +2,18 @@ import { Client } from '@elastic/elasticsearch';
 import { categorizeEmail } from './ai-categorization.service';
 
 
-const esClient = new Client({
-    node: 'http://localhost:9200',
-});
+let esClient: Client | null = null;
 
-// Export the client for use in other services
-export { esClient as client };
+const getClient = () => {
+    if (!esClient) {
+        esClient = new Client({
+            node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
+        });
+    }
+    return esClient;
+};
+
+export { getClient as client };
 
 const EMAIL_INDEX = 'emails';
 
@@ -41,10 +47,11 @@ export interface SearchFilters {
 
 export const createIndex = async () => {
     try {
-        const exists = await esClient.indices.exists({ index: EMAIL_INDEX });
+        const client = getClient();
+        const exists = await client.indices.exists({ index: EMAIL_INDEX });
 
         if (!exists) {
-            await esClient.indices.create({
+            await client.indices.create({
                 index: EMAIL_INDEX,
                 settings: {
                     analysis: {
@@ -102,7 +109,8 @@ export const createIndex = async () => {
 
 export const emailExists = async (id: string): Promise<boolean> => {
     try {
-        const exists = await esClient.exists({
+        const client = getClient();
+        const exists = await client.exists({
             index: EMAIL_INDEX,
             id
         });
@@ -115,10 +123,11 @@ export const emailExists = async (id: string): Promise<boolean> => {
 
 export const getUncategorizedEmailIds = async (): Promise<string[]> => {
     try {
-        const result = await esClient.search({
+        const client = getClient();
+        const result = await client.search({
             index: EMAIL_INDEX,
             body: {
-                size: 10000, // Adjust based on your needs
+                size: 10000,
                 _source: false,
                 query: {
                     bool: {
@@ -130,7 +139,7 @@ export const getUncategorizedEmailIds = async (): Promise<string[]> => {
                     }
                 },
                 sort: [
-                    { date: { order: 'asc' } } // Process oldest first
+                    { date: { order: 'asc' } }
                 ]
             }
         });
@@ -145,14 +154,14 @@ export const getUncategorizedEmailIds = async (): Promise<string[]> => {
 export const indexEmail = async (email: EmailDocument) => {
     const { id, ...emailBody } = email;
 
-    // Check if email already exists
     const exists = await emailExists(id);
     if (exists) {
         console.log(`Email ${id} already exists, skipping indexing.`);
         return;
     }
 
-    await esClient.index({
+    const client = getClient();
+    await client.index({
         index: EMAIL_INDEX,
         id: email.id,
         body: emailBody
@@ -161,7 +170,8 @@ export const indexEmail = async (email: EmailDocument) => {
 
 export const updateEmailCategory = async (id: string, category: string): Promise<void> => {
     try {
-        await esClient.update({
+        const client = getClient();
+    await client.update({
             index: EMAIL_INDEX,
             id,
             body: {
@@ -180,7 +190,8 @@ export const getEmailsByIds = async (ids: string[]): Promise<EmailDocument[]> =>
     if (ids.length === 0) return [];
 
     try {
-        const result = await esClient.mget({
+        const client = getClient();
+        const result = await client.mget({
             index: EMAIL_INDEX,
             body: {
                 ids
@@ -238,7 +249,8 @@ export const searchEmails = async (query: string, filters?: SearchFilters) => {
         });
     }
 
-    const result = await esClient.search({
+    const client = getClient();
+    const result = await client.search({
         index: EMAIL_INDEX,
         body: searchBody
     });
@@ -250,7 +262,8 @@ export const searchEmails = async (query: string, filters?: SearchFilters) => {
 };
 
 export const getEmailById = async (id: string) => {
-    const result = await esClient.get({
+    const client = getClient();
+    const result = await client.get({
         index: EMAIL_INDEX,
         id
     });
@@ -262,7 +275,8 @@ export const getEmailById = async (id: string) => {
 };
 
 export const getCategoryStats = async () => {
-    const result = await esClient.search({
+    const client = getClient();
+    const result = await client.search({
         index: EMAIL_INDEX,
         body: {
             size: 0,
@@ -285,7 +299,8 @@ export const getCategoryStats = async () => {
 };
 
 export const getUncategorizedEmails = async () => {
-    const result = await esClient.search({
+    const client = getClient();
+    const result = await client.search({
         index: EMAIL_INDEX,
         body: {
             query: {
@@ -330,4 +345,48 @@ export const categorizeEmailById = async (emailId: string) => {
     await updateEmailCategory(emailId, result.category);
 
     return result;
+};
+
+export const deleteEmailsByAccount = async (account: string): Promise<number> => {
+    const client = getClient();
+    const result = await client.deleteByQuery({
+        index: EMAIL_INDEX,
+        query: {
+            term: { account: account }
+        }
+    });
+    return result.deleted || 0;
+};
+
+export const getEmailCountByAccount = async (account: string): Promise<number> => {
+    const client = getClient();
+    const result = await client.count({
+        index: EMAIL_INDEX,
+        query: {
+            term: { account: account }
+        }
+    });
+    return result.count;
+};
+
+export const getAccountStats = async (): Promise<Array<{ account: string; count: number }>> => {
+    const client = getClient();
+    const result = await client.search({
+        index: EMAIL_INDEX,
+        size: 0,
+        aggs: {
+            accounts: {
+                terms: {
+                    field: 'account',
+                    size: 100
+                }
+            }
+        }
+    });
+
+    const buckets = (result.aggregations as any)?.accounts?.buckets || [];
+    return buckets.map((bucket: any) => ({
+        account: bucket.key,
+        count: bucket.doc_count
+    }));
 };

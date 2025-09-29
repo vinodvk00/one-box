@@ -5,7 +5,9 @@ import {
     getConnectedAccounts,
     getAccountDetails,
     disconnectAccount,
-    toggleAccountStatus
+    toggleAccountStatus,
+    forceReconnectOAuth,
+    cleanupInvalidOAuthTokens
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -252,5 +254,71 @@ router.delete('/accounts/:email', disconnectAccount);
  *         description: Failed to toggle account status
  */
 router.patch('/accounts/:email/toggle', toggleAccountStatus);
+
+/**
+ * @openapi
+ * /auth/accounts/{email}/force-reconnect:
+ *   post:
+ *     tags:
+ *       - Account Management
+ *     summary: Force reconnect OAuth account
+ *     description: Forces a full OAuth reconnection flow by clearing existing tokens and redirecting to Google OAuth.
+ *     parameters:
+ *       - in: path
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Email address of the OAuth account to force reconnect
+ *     responses:
+ *       '200':
+ *         description: Force reconnect initiated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 authUrl:
+ *                   type: string
+ *                   description: OAuth authorization URL to redirect to
+ *                 redirectToAuth:
+ *                   type: boolean
+ *       '400':
+ *         description: Cannot force reconnect IMAP accounts or missing email parameter
+ *       '404':
+ *         description: Account not found
+ *       '500':
+ *         description: Failed to force reconnect account
+ */
+router.post('/accounts/:email/force-reconnect', forceReconnectOAuth);
+
+/**
+ * @openapi
+ * /auth/cleanup-invalid-tokens:
+ *   post:
+ *     tags:
+ *       - Account Management
+ *     summary: Cleanup invalid OAuth tokens
+ *     description: Validates all OAuth tokens and removes any that are invalid or expired.
+ *     responses:
+ *       '200':
+ *         description: Invalid tokens cleanup completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       '500':
+ *         description: Failed to cleanup invalid OAuth tokens
+ */
+router.post('/cleanup-invalid-tokens', cleanupInvalidOAuthTokens);
 
 export default router;

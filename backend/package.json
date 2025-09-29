@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@elastic/elasticsearch": "^8.10.0",
+    "@sentry/node": "^10.15.0",
     "@types/cors": "^2.8.19",
     "@types/node": "^24.0.14",
     "axios": "^1.10.0",

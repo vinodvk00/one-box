@@ -128,6 +128,57 @@ export const emailApi = {
       );
       return handleResponse(response);
     },
+
+  syncOAuthEmails: async (options?: {
+    email?: string;
+    daysBack?: number;
+    forceReindex?: boolean;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    syncedAccounts: string[];
+    tokenInfo?: {
+      hasFullAccess: boolean;
+      scopes: string[];
+      recommendation: string;
+    };
+  }> => {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      syncedAccounts: string[];
+      tokenInfo?: {
+        hasFullAccess: boolean;
+        scopes: string[];
+        recommendation: string;
+      };
+    }>("/api/sync/oauth", options || {});
+    return handleResponse(response);
+  },
+
+  manageEmailIndex: async (options: {
+    action: 'delete' | 'count' | 'reindex';
+    email: string;
+    daysBack?: number;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    count: number;
+  }> => {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      count: number;
+    }>("/api/index/manage", options);
+    return handleResponse(response);
+  },
+
+  getIndexStats: async (): Promise<Array<{account: string; count: number}>> => {
+    const response = await apiClient.get<Array<{account: string; count: number}>>(
+      "/api/index/stats"
+    );
+    return handleResponse(response);
+  },
 };
 
 export const replyApi = {
@@ -181,6 +232,21 @@ export const authApi = {
     const response = await apiClient.patch<AccountActionResponse>(
       `/auth/accounts/${encodeURIComponent(email)}/toggle`
     );
+    return handleResponse(response);
+  },
+
+  forceReconnectAccount: async (email: string): Promise<{
+    success: boolean;
+    message: string;
+    authUrl: string;
+    redirectToAuth: boolean;
+  }> => {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      authUrl: string;
+      redirectToAuth: boolean;
+    }>(`/auth/accounts/${encodeURIComponent(email)}/force-reconnect`);
     return handleResponse(response);
   },
 };

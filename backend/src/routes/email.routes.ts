@@ -7,7 +7,10 @@ import {
     categorizeEmail,
     getCategoryStats,
     startBatchCategorization,
-    getBatchCategorizationStatus
+    getBatchCategorizationStatus,
+    syncOAuthEmails,
+    manageEmailIndex,
+    getIndexStats
 } from '../controllers/email.controller';
 
 const router = Router();
@@ -294,6 +297,122 @@ router.post('/batch-categorize', startBatchCategorization);
  *                   type: integer
  */
 router.get('/batch-categorize/status', getBatchCategorizationStatus);
+
+/**
+ * @openapi
+ * /api/sync/oauth:
+ *   post:
+ *     tags:
+ *       - Email Sync
+ *     summary: Sync emails from OAuth accounts
+ *     description: Fetches emails from all connected OAuth accounts (Gmail) for the last 3 days by default.
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 description: Specific email account to sync (optional - syncs all if not provided)
+ *               daysBack:
+ *                 type: integer
+ *                 default: 3
+ *                 description: Number of days back to fetch emails
+ *     responses:
+ *       '200':
+ *         description: Email sync completed successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 syncedAccounts:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       '500':
+ *         description: Sync failed
+ */
+router.post('/sync/oauth', syncOAuthEmails);
+
+/**
+ * @openapi
+ * /api/index/stats:
+ *   get:
+ *     tags:
+ *       - Index Management
+ *     summary: Get email index statistics
+ *     description: Returns statistics about indexed emails per account.
+ *     responses:
+ *       '200':
+ *         description: Index statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   account:
+ *                     type: string
+ *                   count:
+ *                     type: integer
+ *       '500':
+ *         description: Failed to get stats
+ */
+router.get('/index/stats', getIndexStats);
+
+/**
+ * @openapi
+ * /api/index/manage:
+ *   post:
+ *     tags:
+ *       - Index Management
+ *     summary: Manage email index for an account
+ *     description: Delete, re-index, or get stats for a specific account's emails.
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               action:
+ *                 type: string
+ *                 enum: [delete, reindex, count]
+ *                 description: Action to perform
+ *               email:
+ *                 type: string
+ *                 description: Email account to manage
+ *               daysBack:
+ *                 type: integer
+ *                 default: 3
+ *                 description: Days back for re-indexing
+ *             required:
+ *               - action
+ *               - email
+ *     responses:
+ *       '200':
+ *         description: Action completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 count:
+ *                   type: integer
+ *       '500':
+ *         description: Action failed
+ */
+router.post('/index/manage', manageEmailIndex);
 
 /**
  * @openapi

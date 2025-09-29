@@ -4,14 +4,22 @@ import {
     getEmailById as getEmailByIdService,
     getCategoryStats as getCategoryStatsService,
     getUncategorizedEmails as getUncategorizedEmailsService,
-    categorizeEmailById
+    categorizeEmailById,
+    deleteEmailsByAccount,
+    getEmailCountByAccount,
+    getAccountStats
 } from '../services/elasticsearch.service';
 import {
     startBatchCategorization as startBatchCategorizationService,
     isBatchCategorizationRunning
 } from '../services/batch-categorization.service';
+import {
+    fetchGmailMessages,
+    syncAllOAuthAccounts
+} from '../services/gmail.service';
+import { checkTokenScopes } from '../services/oauth.service';
 
-/**
+/*
  * Search and filter emails
  */
 export const searchEmails = async (req: Request, res: Response) => {
@@ -32,7 +40,7 @@ export const searchEmails = async (req: Request, res: Response) => {
     }
 };
 
-/**
+/*
  * Get all emails with optional filters
  */
 export const getAllEmails = async (req: Request, res: Response) => {
@@ -50,8 +58,8 @@ export const getAllEmails = async (req: Request, res: Response) => {
     }
 };
 
-/**
- * Get a single email by ID
+/*
+ *Get a single email by ID
  */
 export const getEmailById = async (req: Request, res: Response) => {
     try {
@@ -63,7 +71,7 @@ export const getEmailById = async (req: Request, res: Response) => {
     }
 };
 
-/**
+/*
  * Get uncategorized emails
  */
 export const getUncategorizedEmails = async (req: Request, res: Response) => {
@@ -76,7 +84,7 @@ export const getUncategorizedEmails = async (req: Request, res: Response) => {
     }
 };
 
-/**
+/*
  * Categorize a specific email
  */
 export const categorizeEmail = async (req: Request, res: Response) => {
@@ -92,7 +100,7 @@ export const categorizeEmail = async (req: Request, res: Response) => {
     }
 };
 
-/**
+/*
  * Get email category statistics
  */
 export const getCategoryStats = async (req: Request, res: Response) => {
@@ -105,7 +113,7 @@ export const getCategoryStats = async (req: Request, res: Response) => {
     }
 };
 
-/**
+/*
  * Start batch categorization
  */
 export const startBatchCategorization = async (req: Request, res: Response) => {
@@ -130,7 +138,7 @@ export const startBatchCategorization = async (req: Request, res: Response) => {
     }
 };
 
-/**
+/*
  * Get batch categorization status
  */
 export const getBatchCategorizationStatus = async (req: Request, res: Response) => {
@@ -145,5 +153,133 @@ export const getBatchCategorizationStatus = async (req: Request, res: Response) 
     } catch (error) {
         console.error('Failed to get batch status:', error);
         res.status(500).json({ error: 'Failed to get batch status' });
+    }
+};
+
+/* 
+    * Sync emails for OAuth accounts
+*/
+
+export const syncOAuthEmails = async (req: Request, res: Response) => {
+    try {
+        const { email, daysBack = 3, forceReindex = false } = req.body;
+
+        console.log(`🔄 Starting OAuth email sync${email ? ` for ${email}` : ' for all accounts'}${forceReindex ? ' (force re-index)' : ''}...`);
+
+        if (email) {
+            const { hasValidOAuthConnection } = await import('../services/oauth.service');
+
+            const isValidConnection = await hasValidOAuthConnection(email);
+            if (!isValidConnection) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid or expired OAuth connection',
+                    message: `Please reconnect your Gmail account: ${email}`
+                });
+            }
+
+            const scopeCheck = await checkTokenScopes(email);
+
+            const emails = await fetchGmailMessages(email, daysBack, 100, forceReindex);
+            res.json({
+                success: true,
+                message: `Successfully ${forceReindex ? 're-' : ''}synced ${emails.length} emails for ${email}`,
+                syncedAccounts: [email],
+                tokenInfo: {
+                    hasFullAccess: scopeCheck.hasFullAccess,
+                    scopes: scopeCheck.scopes,
+                    recommendation: scopeCheck.hasFullAccess
+                        ? "Token has full Gmail access"
+                        : "Token has limited access - reconnect for full email content"
+                }
+            });
+        } else {
+            await syncAllOAuthAccounts(daysBack);
+            res.json({
+                success: true,
+                message: 'Successfully synced emails for all OAuth accounts',
+                syncedAccounts: []
+            });
+        }
+
+    } catch (error) {
+        console.error('OAuth email sync failed:', error);
+        res.status(500).json({
+            success: false,
+            error: 'OAuth email sync failed',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+};
+
+export const manageEmailIndex = async (req: Request, res: Response) => {
+    try {
+        const { action, email, daysBack = 3 } = req.body;
+
+        if (!action || !email) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameters: action and email'
+            });
+        }
+
+        switch (action) {
+            case 'delete':
+                const deletedCount = await deleteEmailsByAccount(email);
+                res.json({
+                    success: true,
+                    message: `Deleted ${deletedCount} emails for ${email}`,
+                    count: deletedCount
+                });
+                break;
+
+            case 'count':
+                const emailCount = await getEmailCountByAccount(email);
+                res.json({
+                    success: true,
+                    message: `Found ${emailCount} emails for ${email}`,
+                    count: emailCount
+                });
+                break;
+
+            case 'reindex':
+                const deletedForReindex = await deleteEmailsByAccount(email);
+                console.log(`🗑️ Deleted ${deletedForReindex} existing emails for ${email}`);
+
+                const reindexedEmails = await fetchGmailMessages(email, daysBack, 100, true);
+                res.json({
+                    success: true,
+                    message: `Re-indexed ${reindexedEmails.length} emails for ${email} (deleted ${deletedForReindex} old entries)`,
+                    count: reindexedEmails.length
+                });
+                break;
+
+            default:
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid action. Use: delete, count, or reindex'
+                });
+        }
+
+    } catch (error) {
+        console.error('Email index management failed:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Email index management failed',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+};
+
+export const getIndexStats = async (req: Request, res: Response) => {
+    try {
+        const stats = await getAccountStats();
+        res.json(stats);
+    } catch (error) {
+        console.error('Failed to get index stats:', error);
+        res.status(500).json({
+            error: 'Failed to get index stats',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
     }
 };
