@@ -233,3 +233,75 @@
 .email-list-container::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* Text truncation utilities */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* Ensure proper spacing and layout */
+.email-list-responsive {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Better mobile table handling */
+@media (max-width: 768px) {
+  .email-table-container {
+    overflow-x: visible;
+    width: 100%;
+  }
+
+  .mobile-card-layout {
+    display: block;
+    width: 100%;
+  }
+}
+
+/* Desktop table layout constraints */
+@media (min-width: 768px) {
+  .email-table-desktop {
+    table-layout: fixed;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .email-table-desktop th,
+  .email-table-desktop td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .email-table-desktop .subject-cell {
+    white-space: normal;
+    word-wrap: break-word;
+    max-width: 0;
+  }
+
+  .email-table-desktop .subject-cell p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+  }
+}

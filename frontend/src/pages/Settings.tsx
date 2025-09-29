@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { authApi, emailApi } from '@/services/api';
+import { useEmailStore } from '@/stores/emailStore';
 import type { AccountConfig } from '@/types/email';
 
 export function Settings() {
@@ -11,13 +12,21 @@ export function Settings() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
+  const { triggerRefresh, refreshEmails, fetchCategoryStats } = useEmailStore();
+
   const loadAccounts = async () => {
     try {
       setLoading(true);
-      const response = await authApi.getConnectedAccounts();
-      setAccounts(response.accounts);
       setError(null);
+      console.log('🔄 Loading accounts...');
+
+      const response = await authApi.getConnectedAccounts();
+      console.log('📥 Received accounts response:', response);
+
+      setAccounts(response.accounts);
+      console.log('✅ Accounts state updated with', response.accounts.length, 'accounts');
     } catch (err: any) {
+      console.error('❌ Failed to load accounts:', err);
       setError(err.error || 'Failed to load accounts');
     } finally {
       setLoading(false);
@@ -29,36 +38,103 @@ export function Settings() {
   };
 
   const handleDisconnect = async (email: string) => {
+    if (!confirm(`Are you sure you want to disconnect ${email}? This will remove all associated data.`)) {
+      return;
+    }
+
     try {
-      await authApi.disconnectAccount(email);
-      await loadAccounts(); // Reload accounts
+      setError(null);
+      setSyncMessage(null);
+      console.log(`🔌 Attempting to disconnect ${email}...`);
+
+      const result = await authApi.disconnectAccount(email);
+      console.log(`✅ Successfully disconnected ${email}`, result);
+
+      setSyncMessage(`✅ Successfully disconnected ${email}`);
+
+      // Remove the disconnected account from state immediately
+      setAccounts(prevAccounts => {
+        const updatedAccounts = prevAccounts.filter(account => account.email !== email);
+        console.log(`📋 Updated accounts list, removed ${email}. New count: ${updatedAccounts.length}`);
+        return updatedAccounts;
+      });
+
+      Promise.all([
+        refreshEmails().catch(e => console.warn('Failed to refresh emails:', e)),
+        fetchCategoryStats().catch(e => console.warn('Failed to refresh category stats:', e))
+      ]).then(() => {
+        triggerRefresh();
+        console.log('🔄 Global refresh completed');
+      });
+
     } catch (err: any) {
+      console.error(`❌ Failed to disconnect ${email}:`, err);
       setError(err.error || 'Failed to disconnect account');
+
+      loadAccounts();
     }
   };
 
   const handleForceReconnect = async (email: string) => {
     try {
       setError(null);
+      setSyncMessage(null);
+      console.log(`🔄 Attempting to force reconnect ${email}...`);
+
       const result = await authApi.forceReconnectAccount(email);
 
       if (result.redirectToAuth && result.authUrl) {
-        // Redirect to OAuth flow
         window.location.href = result.authUrl;
       } else {
+        console.log(`✅ Force reconnect completed for ${email}`);
         setSyncMessage(result.message);
+
+        await loadAccounts();
+
+        await refreshEmails();
+        await fetchCategoryStats();
+        triggerRefresh();
       }
     } catch (err: any) {
+      console.error(`❌ Failed to force reconnect ${email}:`, err);
       setError(err.error || 'Failed to initiate force reconnect');
     }
   };
 
   const handleToggleStatus = async (email: string) => {
     try {
+      setError(null);
+      setSyncMessage(null);
+      console.log(`⚡ Toggling status for ${email}...`);
+
       await authApi.toggleAccountStatus(email);
-      await loadAccounts(); // Reload accounts
+      console.log(`✅ Successfully toggled status for ${email}`);
+
+      setSyncMessage(`✅ Successfully updated status for ${email}`);
+
+      setAccounts(prevAccounts => {
+        const updatedAccounts = prevAccounts.map(account =>
+          account.email === email
+            ? { ...account, isActive: !account.isActive }
+            : account
+        );
+        console.log(`📋 Updated status for ${email} in local state`);
+        return updatedAccounts;
+      });
+
+      Promise.all([
+        refreshEmails().catch(e => console.warn('Failed to refresh emails:', e)),
+        fetchCategoryStats().catch(e => console.warn('Failed to refresh category stats:', e))
+      ]).then(() => {
+        triggerRefresh();
+        console.log('🔄 Global refresh completed after status toggle');
+      });
+
     } catch (err: any) {
+      console.error(`❌ Failed to toggle status for ${email}:`, err);
       setError(err.error || 'Failed to toggle account status');
+
+      loadAccounts();
     }
   };
 
@@ -76,10 +152,13 @@ export function Settings() {
 
       setSyncMessage(result.message);
 
-      // Show token permission info if available
       if (result.tokenInfo && !result.tokenInfo.hasFullAccess) {
         setSyncMessage(result.message + ' ⚠️ Limited access detected - consider reconnecting for full email content.');
       }
+
+      await refreshEmails();
+      await fetchCategoryStats();
+      triggerRefresh();
 
       console.log('✅ Email sync completed:', result);
     } catch (err: any) {
@@ -98,14 +177,21 @@ export function Settings() {
       setSyncLoading(true);
       setSyncMessage(null);
       setError(null);
+      console.log(`🗑️ Deleting email index for ${email}...`);
 
       const result = await emailApi.manageEmailIndex({
         action: 'delete',
         email
       });
 
+      console.log(`✅ Successfully deleted email index for ${email}`);
       setSyncMessage(result.message);
+
+      await refreshEmails();
+      await fetchCategoryStats();
+      triggerRefresh();
     } catch (err: any) {
+      console.error(`❌ Failed to delete email index for ${email}:`, err);
       setError(err.error || 'Failed to delete email index');
     } finally {
       setSyncLoading(false);
@@ -115,7 +201,6 @@ export function Settings() {
   useEffect(() => {
     loadAccounts();
 
-    // Handle OAuth redirect parameters
     const urlParams = new URLSearchParams(window.location.search);
     const oauthStatus = urlParams.get('oauth');
     const email = urlParams.get('email');
@@ -123,14 +208,19 @@ export function Settings() {
 
     if (oauthStatus === 'success' && email) {
       setSyncMessage(`✅ Successfully connected Gmail account: ${email}`);
-      // Clean up URL parameters
+
+      setTimeout(async () => {
+        await refreshEmails();
+        await fetchCategoryStats();
+        triggerRefresh();
+      }, 1000);
+
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (oauthStatus === 'error' && message) {
       setError(`❌ OAuth connection failed: ${decodeURIComponent(message)}`);
-      // Clean up URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, []);
+  }, [refreshEmails, fetchCategoryStats, triggerRefresh]);
 
   if (loading) {
     return <div className="p-6">Loading settings...</div>;

@@ -24,16 +24,24 @@ import { checkTokenScopes } from '../services/oauth.service';
  */
 export const searchEmails = async (req: Request, res: Response) => {
     try {
-        const { q, account, folder, category } = req.query;
-        const emails = await searchEmailsService(
+        const { q, account, folder, category, page, limit } = req.query;
+
+        const pageNum = parseInt(page as string) || 1;
+        const limitNum = parseInt(limit as string) || 50;
+
+        const result = await searchEmailsService(
             q as string,
             {
                 account: account as string,
                 folder: folder as string,
                 category: category as string
+            },
+            {
+                page: pageNum,
+                limit: limitNum
             }
         );
-        res.json(emails);
+        res.json(result);
     } catch (error) {
         console.error('Search failed:', error);
         res.status(500).json({ error: 'Search failed' });
@@ -45,13 +53,21 @@ export const searchEmails = async (req: Request, res: Response) => {
  */
 export const getAllEmails = async (req: Request, res: Response) => {
     try {
-        const { account, folder, category } = req.query;
-        const emails = await searchEmailsService('', {
+        const { account, folder, category, page, limit } = req.query;
+
+        // Parse pagination parameters with defaults
+        const pageNum = parseInt(page as string) || 1;
+        const limitNum = parseInt(limit as string) || 50;
+
+        const result = await searchEmailsService('', {
             account: account as string,
             folder: folder as string,
             category: category as string
+        }, {
+            page: pageNum,
+            limit: limitNum
         });
-        res.json(emails);
+        res.json(result);
     } catch (error) {
         console.error('Failed to fetch emails:', error);
         res.status(500).json({ error: 'Failed to fetch emails' });

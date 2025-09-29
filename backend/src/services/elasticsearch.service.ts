@@ -210,7 +210,11 @@ export const getEmailsByIds = async (ids: string[]): Promise<EmailDocument[]> =>
     }
 };
 
-export const searchEmails = async (query: string, filters?: SearchFilters) => {
+export const searchEmails = async (
+    query: string,
+    filters?: SearchFilters,
+    pagination?: { page: number; limit: number }
+) => {
     const searchBody: any = {
         query: {
             bool: {
@@ -249,16 +253,39 @@ export const searchEmails = async (query: string, filters?: SearchFilters) => {
         });
     }
 
+    if (pagination) {
+        const { page, limit } = pagination;
+        const from = (page - 1) * limit;
+        searchBody.size = limit;
+        searchBody.from = from;
+    } else {
+        searchBody.size = 1000;
+    }
+
     const client = getClient();
     const result = await client.search({
         index: EMAIL_INDEX,
         body: searchBody
     });
 
-    return result.hits.hits.map(hit => ({
+    const emails = result.hits.hits.map(hit => ({
         id: hit._id as string,
         ...(hit._source as any)
     }));
+
+    const totalHits = typeof result.hits.total === 'number'
+        ? result.hits.total
+        : result.hits.total?.value || 0;
+
+    return {
+        emails,
+        total: totalHits,
+        page: pagination?.page || 1,
+        limit: pagination?.limit || emails.length,
+        totalPages: pagination
+            ? Math.ceil(totalHits / pagination.limit)
+            : 1
+    };
 };
 
 export const getEmailById = async (id: string) => {

@@ -64,6 +64,8 @@ export const emailApi = {
     if (filters?.account) params.append("account", filters.account);
     if (filters?.folder) params.append("folder", filters.folder);
     if (filters?.category) params.append("category", filters.category);
+    if (filters?.page) params.append("page", filters.page.toString());
+    if (filters?.limit) params.append("limit", filters.limit.toString());
 
     const response = await apiClient.get<EmailListResponse>(`/api?${params}`);
     return handleResponse(response);
@@ -77,6 +79,8 @@ export const emailApi = {
     if (searchParams.account) params.append("account", searchParams.account);
     if (searchParams.folder) params.append("folder", searchParams.folder);
     if (searchParams.category) params.append("category", searchParams.category);
+    if (searchParams.page) params.append("page", searchParams.page.toString());
+    if (searchParams.limit) params.append("limit", searchParams.limit.toString());
 
     const response = await apiClient.get<EmailListResponse>(
       `/api/search?${params}`

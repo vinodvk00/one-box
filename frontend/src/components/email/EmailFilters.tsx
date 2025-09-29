@@ -80,98 +80,102 @@ export function EmailFilters({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex items-center gap-2">
+      <div className="space-y-3 sm:space-y-0">
+        <div className="flex items-center gap-2 sm:mb-3">
           <Filter className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">Filters:</span>
+          {hasActiveFilters && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearFilters}
+              className="text-muted-foreground ml-auto sm:ml-2"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Clear All
+            </Button>
+          )}
         </div>
 
-        <div className="min-w-[160px]">
-          <Select
-            value={searchParams.category || ""}
-            onValueChange={(value) =>
-              onSearchChange({
-                ...searchParams,
-                category: value === "all" ? undefined : value,
-              })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All Categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {EMAIL_CATEGORIES.map((category) => (
-                <SelectItem key={category} value={category}>
-                  <div className="flex items-center gap-2">
-                    <span>{CATEGORY_INFO[category]?.label || category}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {availableAccounts.length > 0 && (
-          <div className="min-w-[200px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="w-full">
             <Select
-              value={searchParams.account || ""}
+              value={searchParams.category || ""}
               onValueChange={(value) =>
                 onSearchChange({
                   ...searchParams,
-                  account: value === "all" ? undefined : value,
+                  category: value === "all" ? undefined : value,
                 })
               }
             >
-              <SelectTrigger>
-                <SelectValue placeholder="All Accounts" />
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Accounts</SelectItem>
-                {availableAccounts.map((account) => (
-                  <SelectItem key={account} value={account}>
-                    {account}
+                <SelectItem value="all">All Categories</SelectItem>
+                {EMAIL_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    <div className="flex items-center gap-2">
+                      <span>{CATEGORY_INFO[category]?.label || category}</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        )}
 
-        <div className="min-w-[120px]">
-          <Select
-            value={searchParams.folder || ""}
-            onValueChange={(value) =>
-              onSearchChange({
-                ...searchParams,
-                folder: value === "all" ? undefined : value,
-              })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All Folders" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Folders</SelectItem>
-              <SelectItem value="INBOX">Inbox</SelectItem>
-              <SelectItem value="Sent">Sent</SelectItem>
-              <SelectItem value="Drafts">Drafts</SelectItem>
-              <SelectItem value="Spam">Spam</SelectItem>
-            </SelectContent>
-          </Select>
+          {availableAccounts.length > 0 && (
+            <div className="w-full">
+              <Select
+                value={searchParams.account || ""}
+                onValueChange={(value) =>
+                  onSearchChange({
+                    ...searchParams,
+                    account: value === "all" ? undefined : value,
+                  })
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All Accounts" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Accounts</SelectItem>
+                  {availableAccounts.map((account) => (
+                    <SelectItem key={account} value={account}>
+                      {account}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="w-full">
+            <Select
+              value={searchParams.folder || ""}
+              onValueChange={(value) =>
+                onSearchChange({
+                  ...searchParams,
+                  folder: value === "all" ? undefined : value,
+                })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Folders" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Folders</SelectItem>
+                <SelectItem value="INBOX">Inbox</SelectItem>
+                <SelectItem value="Sent">Sent</SelectItem>
+                <SelectItem value="Drafts">Drafts</SelectItem>
+                <SelectItem value="Spam">Spam</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Placeholder div for grid alignment when account filter is not available */}
+          {availableAccounts.length === 0 && <div className="hidden lg:block"></div>}
         </div>
-
-        {hasActiveFilters && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleClearFilters}
-            className="text-muted-foreground"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Clear All
-          </Button>
-        )}
       </div>
 
       {hasActiveFilters && (

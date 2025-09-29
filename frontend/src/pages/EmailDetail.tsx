@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmailCategoryBadge } from "@/components/email/EmailCategoryBadge";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { useEmails } from "@/hooks/useEmails";
+import { useEmailStore } from "@/stores/emailStore";
 import { useReplySuggestions } from "@/hooks/useReplysuggestions";
 import { useCategories } from "@/hooks/useCategories";
 import {
@@ -32,7 +32,7 @@ export function EmailDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { getEmailById } = useEmails();
+  const { getEmailById } = useEmailStore();
   const { categorizeEmail } = useCategories();
   const {
     suggestion,

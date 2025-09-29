@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { useCategories } from "@/hooks/useCategories";
+import { useEmailStore } from "@/stores/emailStore";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCount, getCategoryIcon } from "@/utils/formatters";
@@ -14,6 +16,14 @@ export function Dashboard() {
     refreshStats,
     startBatchCategorization,
   } = useCategories();
+
+  const { lastRefresh } = useEmailStore();
+
+  useEffect(() => {
+    if (lastRefresh > 0) {
+      refreshStats();
+    }
+  }, [lastRefresh, refreshStats]);
 
   const totalEmails = stats.reduce((sum, stat) => sum + stat.count, 0);
   const uncategorizedCount = batchStatus?.uncategorizedCount || 0;

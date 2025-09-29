@@ -34,6 +34,8 @@ export interface SearchFilters {
 
 export interface SearchParams extends SearchFilters {
   q?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface EmailCategorizationResult {
@@ -76,11 +78,15 @@ export interface ApiError {
   statusCode?: number;
 }
 
-export type EmailListResponse = EmailDocument[];
+export interface EmailListResponse {
+  emails: EmailDocument[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
 export type EmailResponse = EmailDocument;
-
-// OAuth and Account Management Types
 export interface AccountConfig {
   id: string;
   email: string;

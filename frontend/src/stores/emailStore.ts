@@ -1,18 +1,29 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { EmailDocument, SearchParams, CategoryStats } from "@/types/email";
+import api from "@/services/api";
+import type { EmailDocument, SearchParams, CategoryStats, ApiError, EmailListResponse } from "@/types/email";
 
 interface EmailState {
+  // Data state
   emails: EmailDocument[];
   selectedEmail: EmailDocument | null;
   totalCount: number;
+  categoryStats: CategoryStats[];
 
+  // Pagination state
+  currentPage: number;
+  pageSize: number;
+  totalPages: number;
+
+  // UI state
   loading: boolean;
   error: string | null;
   searchParams: SearchParams;
 
-  categoryStats: CategoryStats[];
+  // Refresh timestamp for triggering updates
+  lastRefresh: number;
 
+  // Actions
   setEmails: (emails: EmailDocument[]) => void;
   setSelectedEmail: (email: EmailDocument | null) => void;
   setLoading: (loading: boolean) => void;
@@ -22,21 +33,35 @@ interface EmailState {
   updateEmail: (id: string, updates: Partial<EmailDocument>) => void;
   clearEmails: () => void;
   reset: () => void;
+  setCurrentPage: (page: number) => void;
+  setPageSize: (size: number) => void;
+
+  // Async actions
+  fetchEmails: (params?: SearchParams) => Promise<void>;
+  refreshEmails: () => Promise<void>;
+  categorizeEmail: (id: string) => Promise<boolean>;
+  fetchCategoryStats: () => Promise<void>;
+  getEmailById: (id: string) => Promise<EmailDocument | null>;
+  triggerRefresh: () => void;
 }
 
 const initialState = {
   emails: [],
   selectedEmail: null,
   totalCount: 0,
+  categoryStats: [],
+  currentPage: 1,
+  pageSize: 50,
+  totalPages: 1,
   loading: false,
   error: null,
   searchParams: {},
-  categoryStats: [],
+  lastRefresh: 0,
 };
 
 export const useEmailStore = create<EmailState>()(
   devtools(
-    (set) => ({
+    (set, get) => ({
       ...initialState,
 
       setEmails: (emails: EmailDocument[]) =>
@@ -73,6 +98,7 @@ export const useEmailStore = create<EmailState>()(
               state.selectedEmail?.id === id
                 ? { ...state.selectedEmail, ...updates }
                 : state.selectedEmail,
+            lastRefresh: Date.now(),
           }),
           false,
           "updateEmail"
@@ -84,6 +110,8 @@ export const useEmailStore = create<EmailState>()(
             emails: [],
             selectedEmail: null,
             totalCount: 0,
+            currentPage: 1,
+            totalPages: 1,
             error: null,
           },
           false,
@@ -91,6 +119,109 @@ export const useEmailStore = create<EmailState>()(
         ),
 
       reset: () => set(initialState, false, "reset"),
+
+      setCurrentPage: (page: number) =>
+        set({ currentPage: page }, false, "setCurrentPage"),
+
+      setPageSize: (size: number) =>
+        set({ pageSize: size }, false, "setPageSize"),
+
+      triggerRefresh: () =>
+        set({ lastRefresh: Date.now() }, false, "triggerRefresh"),
+
+      fetchEmails: async (params?: SearchParams) => {
+        const state = get();
+        const searchParams = {
+          ...state.searchParams,
+          page: state.currentPage,
+          limit: state.pageSize,
+          ...params,
+        };
+
+        set({ loading: true, error: null, searchParams }, false, "fetchEmails:start");
+
+        try {
+          const result: EmailListResponse = searchParams.q
+            ? await api.emails.searchEmails(searchParams)
+            : await api.emails.getEmails(searchParams);
+
+          set(
+            {
+              emails: result.emails,
+              totalCount: result.total,
+              currentPage: result.page,
+              totalPages: result.totalPages,
+              loading: false,
+              lastRefresh: Date.now(),
+            },
+            false,
+            "fetchEmails:success"
+          );
+        } catch (err) {
+          const apiError = err as ApiError;
+          set(
+            {
+              emails: [],
+              totalCount: 0,
+              currentPage: 1,
+              totalPages: 1,
+              loading: false,
+              error: apiError.error || "Failed to fetch emails",
+            },
+            false,
+            "fetchEmails:error"
+          );
+        }
+      },
+
+      refreshEmails: async () => {
+        const state = get();
+        await get().fetchEmails(state.searchParams);
+      },
+
+      categorizeEmail: async (id: string): Promise<boolean> => {
+        set({ error: null }, false, "categorizeEmail:start");
+
+        try {
+          const result = await api.emails.categorizeEmail(id);
+
+          // Update the email with the new category
+          get().updateEmail(id, { category: result.category });
+
+          // Refresh category stats
+          await get().fetchCategoryStats();
+
+          return true;
+        } catch (err) {
+          const apiError = err as ApiError;
+          set(
+            { error: apiError.error || "Failed to categorize email" },
+            false,
+            "categorizeEmail:error"
+          );
+          return false;
+        }
+      },
+
+      fetchCategoryStats: async () => {
+        try {
+          const stats = await api.emails.getCategoryStats();
+          set({ categoryStats: stats }, false, "fetchCategoryStats");
+        } catch (err) {
+          const apiError = err as ApiError;
+          console.error("Failed to fetch category stats:", apiError.error);
+        }
+      },
+
+      getEmailById: async (id: string): Promise<EmailDocument | null> => {
+        try {
+          return await api.emails.getEmailById(id);
+        } catch (err) {
+          const apiError = err as ApiError;
+          console.error("Failed to fetch email by ID:", apiError.error);
+          return null;
+        }
+      },
     }),
     {
       name: "email-store",
