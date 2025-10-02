@@ -1,4 +1,4 @@
-import { getUncategorizedEmailIds, getEmailsByIds, updateEmailCategory, EmailDocument } from './elasticsearch.service';
+import { getUncategorizedEmailIds, getEmailsByIds, updateEmailCategory, bulkUpdateEmailCategories, EmailDocument } from './elasticsearch.service';
 import { categorizeEmailBatch, BatchEmailInput, BatchCategorizationResult } from './ai-categorization.service';
 import { handleInterestedEmail } from './notification.service';
 
@@ -102,29 +102,47 @@ const processBatch = async (emailIds: string[]): Promise<BatchCategorizationStat
 
         const categorizationResults = await categorizeEmailBatch(batchEmails);
 
-        const processPromises = categorizationResults.map((categorizationResult, index) =>
-            processCategorizationResult(categorizationResult, emails[index])
-        );
+        // Prepare bulk updates and notifications
+        const categoryUpdates: Array<{ id: string; category: string }> = [];
+        const notificationEmails: EmailDocument[] = [];
 
-        const processResults = await Promise.all(processPromises);
-
-        processResults.forEach((processResult, index) => {
+        categorizationResults.forEach((categResult, index) => {
             result.totalProcessed++;
 
-            if (processResult.success) {
-                result.successful++;
-                const categResult = categorizationResults[index];
-                if (categResult.result) {
-                    console.log(`✓ Categorized: ${emails[index].subject} → ${categResult.result.category} (${categResult.result.confidence})`);
+            if (categResult.result) {
+                categoryUpdates.push({
+                    id: categResult.id,
+                    category: categResult.result.category
+                });
+
+                if (categResult.result.category === 'Interested') {
+                    notificationEmails.push({
+                        ...emails[index],
+                        category: categResult.result.category
+                    });
                 }
+
+                result.successful++;
+                console.log(`✓ Categorized: ${emails[index].subject} → ${categResult.result.category} (${categResult.result.confidence})`);
             } else {
                 result.failed++;
                 result.errors.push({
                     emailId: emailIds[index],
-                    error: processResult.error || 'Unknown error'
+                    error: categResult.error || 'Unknown error'
                 });
                 console.log(`✗ Failed to categorize: ${emails[index].subject}`);
             }
+        });
+
+        if (categoryUpdates.length > 0) {
+            await bulkUpdateEmailCategories(categoryUpdates);
+        }
+
+        // Trigger notifications asynchronously
+        notificationEmails.forEach(email => {
+            handleInterestedEmail(email).catch(err => {
+                console.error(`Failed to trigger notification for email ${email.id}:`, err);
+            });
         });
 
     } catch (error) {

@@ -97,10 +97,10 @@ export function EmailList({
   useEffect(() => {
     if (initialFilters && Object.keys(initialFilters).length > 0) {
       fetchEmails(initialFilters);
-    } else if (emails.length === 0 && !loading) {
+    } else {
       fetchEmails({});
     }
-  }, [initialFilters, fetchEmails]);
+  }, []);
 
   useEffect(() => {
     if (currentPage > 1 && totalPages > 0 && currentPage > totalPages) {

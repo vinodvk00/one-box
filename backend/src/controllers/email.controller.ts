@@ -19,6 +19,8 @@ import {
 } from '../services/gmail.service';
 import { checkTokenScopes } from '../services/oauth.service';
 
+// TODO: options for number of emails, days back, force reindex
+
 /*
  * Search and filter emails
  */
@@ -178,7 +180,7 @@ export const getBatchCategorizationStatus = async (req: Request, res: Response) 
 
 export const syncOAuthEmails = async (req: Request, res: Response) => {
     try {
-        const { email, daysBack = 3, forceReindex = false } = req.body;
+        const { email, daysBack = 30, forceReindex = false } = req.body;
 
         console.log(`🔄 Starting OAuth email sync${email ? ` for ${email}` : ' for all accounts'}${forceReindex ? ' (force re-index)' : ''}...`);
 
@@ -196,7 +198,7 @@ export const syncOAuthEmails = async (req: Request, res: Response) => {
 
             const scopeCheck = await checkTokenScopes(email);
 
-            const emails = await fetchGmailMessages(email, daysBack, 100, forceReindex);
+            const emails = await fetchGmailMessages(email, daysBack, 1000, forceReindex);
             res.json({
                 success: true,
                 message: `Successfully ${forceReindex ? 're-' : ''}synced ${emails.length} emails for ${email}`,
@@ -230,7 +232,7 @@ export const syncOAuthEmails = async (req: Request, res: Response) => {
 
 export const manageEmailIndex = async (req: Request, res: Response) => {
     try {
-        const { action, email, daysBack = 3 } = req.body;
+        const { action, email, daysBack = 30 } = req.body;
 
         if (!action || !email) {
             return res.status(400).json({

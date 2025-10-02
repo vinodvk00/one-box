@@ -8,6 +8,8 @@ import swaggerSpec from "./config/swagger";
 import emailRoutes from "./routes/email.routes";
 import authRoutes from './routes/auth.routes';
 import { initializeDatabase } from './services/database-init.service';
+import statusMonitor from 'express-status-monitor';
+import morgan from 'morgan';
 
 dotenv.config();
 
@@ -22,6 +24,12 @@ process.on('uncaughtException', (error) => {
 });
 
 const port = process.env.PORT || 8000;
+
+// Status monitor - access at /status
+app.use(statusMonitor());
+
+// Morgan logger - logs all requests to console
+app.use(morgan('dev'));
 
 app.use(cors({
   origin: [

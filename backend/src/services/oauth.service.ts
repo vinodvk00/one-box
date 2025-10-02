@@ -205,6 +205,9 @@ export const disconnectOAuthAccount = async (email: string): Promise<void> => {
     try {
         console.log(`🔌 Disconnecting OAuth account: ${email}`);
 
+        const { clearTokenCache } = await import('./gmail.service');
+        clearTokenCache(email);
+
         await deleteOAuthTokens(email);
         console.log(`🗑️ Deleted OAuth tokens for ${email}`);
 

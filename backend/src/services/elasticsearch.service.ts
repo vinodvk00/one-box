@@ -151,39 +151,103 @@ export const getUncategorizedEmailIds = async (): Promise<string[]> => {
     }
 };
 
-export const indexEmail = async (email: EmailDocument) => {
-    const { id, ...emailBody } = email;
-
-    const exists = await emailExists(id);
-    if (exists) {
-        console.log(`Email ${id} already exists, skipping indexing.`);
-        return;
-    }
+export const bulkIndexEmails = async (emails: EmailDocument[]): Promise<{ indexed: number; skipped: number }> => {
+    if (emails.length === 0) return { indexed: 0, skipped: 0 };
 
     const client = getClient();
-    await client.index({
-        index: EMAIL_INDEX,
-        id: email.id,
-        body: emailBody
-    });
-};
 
-export const updateEmailCategory = async (id: string, category: string): Promise<void> => {
     try {
-        const client = getClient();
-    await client.update({
+        const mgetResponse = await client.mget({
             index: EMAIL_INDEX,
-            id,
             body: {
-                doc: {
-                    category
-                }
+                ids: emails.map(e => e.id)
             }
         });
+
+        const existingIds = new Set(
+            mgetResponse.docs
+                .filter((doc: any) => doc.found)
+                .map((doc: any) => doc._id)
+        );
+
+        const newEmails = emails.filter(email => !existingIds.has(email.id));
+
+        if (newEmails.length === 0) {
+            console.log(`All ${emails.length} emails already exist, skipping indexing.`);
+            return { indexed: 0, skipped: emails.length };
+        }
+
+        const bulkBody = newEmails.flatMap(email => {
+            const { id, ...emailBody } = email;
+            return [
+                { index: { _index: EMAIL_INDEX, _id: id } },
+                emailBody
+            ];
+        });
+
+        const bulkResponse = await client.bulk({
+            body: bulkBody,
+            refresh: false 
+        });
+
+        const errors = bulkResponse.items.filter((item: any) => item.index?.error);
+
+        if (errors.length > 0) {
+            console.error(`Bulk indexing had ${errors.length} errors:`, errors.slice(0, 3));
+        }
+
+        console.log(`✅ Bulk indexed ${newEmails.length} emails (skipped ${existingIds.size} existing)`);
+
+        return {
+            indexed: newEmails.length - errors.length,
+            skipped: existingIds.size
+        };
     } catch (error) {
-        console.error(`Failed to update category for email ${id}:`, error);
+        console.error('Bulk indexing failed:', error);
         throw error;
     }
+};
+
+// Keeping original for backwards compatibility
+export const indexEmail = async (email: EmailDocument) => {
+    await bulkIndexEmails([email]);
+};
+
+// Bulk update email categories
+export const bulkUpdateEmailCategories = async (
+    updates: Array<{ id: string; category: string }>
+): Promise<void> => {
+    if (updates.length === 0) return;
+
+    try {
+        const client = getClient();
+
+        const bulkBody = updates.flatMap(({ id, category }) => [
+            { update: { _index: EMAIL_INDEX, _id: id } },
+            { doc: { category } }
+        ]);
+
+        const response = await client.bulk({
+            body: bulkBody,
+            refresh: false
+        });
+
+        const errors = response.items.filter((item: any) => item.update?.error);
+
+        if (errors.length > 0) {
+            console.error(`Bulk category update had ${errors.length} errors:`, errors.slice(0, 3));
+        } else {
+            console.log(`✅ Bulk updated ${updates.length} email categories`);
+        }
+    } catch (error) {
+        console.error('Bulk category update failed:', error);
+        throw error;
+    }
+};
+
+// Keep original for backwards compatibility
+export const updateEmailCategory = async (id: string, category: string): Promise<void> => {
+    await bulkUpdateEmailCategories([{ id, category }]);
 };
 
 export const getEmailsByIds = async (ids: string[]): Promise<EmailDocument[]> => {
