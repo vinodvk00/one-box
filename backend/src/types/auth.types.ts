@@ -52,9 +52,17 @@ export interface OAuthTokenDocument {
 
 export interface AccountConfigDocument {
     id: string;
+    userId: string;
     email: string;
     authType: 'imap' | 'oauth';
+    isPrimary: boolean;
     isActive: boolean;
+    imapConfig?: {
+        host: string;
+        port: number;
+        secure: boolean;
+        password?: string; // encrypted
+    };
     createdAt: Date;
     lastSyncAt?: Date;
     syncStatus: 'idle' | 'syncing' | 'error' | 'disconnected';

@@ -47,10 +47,16 @@ export interface SearchFilters {
 
 export const createIndex = async () => {
     try {
+        console.time('    ⏱️  ES client connection');
         const client = getClient();
+        console.timeEnd('    ⏱️  ES client connection');
+
+        console.time('    🔍 Check if index exists');
         const exists = await client.indices.exists({ index: EMAIL_INDEX });
+        console.timeEnd('    🔍 Check if index exists');
 
         if (!exists) {
+            console.time('    ➕ Create index with mappings');
             await client.indices.create({
                 index: EMAIL_INDEX,
                 settings: {
@@ -94,6 +100,7 @@ export const createIndex = async () => {
                     }
                 }
             });
+            console.timeEnd('    ➕ Create index with mappings');
             console.log('Email index created with category support.');
         } else {
             console.log('Email index already exists, skipping creation.');

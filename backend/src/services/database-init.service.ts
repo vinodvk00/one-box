@@ -3,6 +3,7 @@ import {
     createOAuthTokensIndex,
     createAccountConfigsIndex
 } from './oauth-storage.service';
+import { createUsersIndex } from './user.service';
 
 /*
  * Initialize all required Elasticsearch indices
@@ -11,10 +12,21 @@ export const initializeDatabase = async (): Promise<void> => {
     console.log('🔧 Initializing database indices...');
 
     try {
+        console.time('  📧 Create emails index');
         await createIndex();
+        console.timeEnd('  📧 Create emails index');
 
+        console.time('  👤 Create users index');
+        await createUsersIndex();
+        console.timeEnd('  👤 Create users index');
+
+        console.time('  🔑 Create OAuth tokens index');
         await createOAuthTokensIndex();
+        console.timeEnd('  🔑 Create OAuth tokens index');
+
+        console.time('  ⚙️  Create account configs index');
         await createAccountConfigsIndex();
+        console.timeEnd('  ⚙️  Create account configs index');
 
         console.log('✅ Database initialization completed successfully');
     } catch (error) {
@@ -31,7 +43,7 @@ export const validateDatabaseSetup = async (): Promise<boolean> => {
         const { client: getClient } = await import('./elasticsearch.service');
         const client = getClient();
 
-        const indices = ['emails', 'oauth_tokens', 'account_configs'];
+        const indices = ['emails', 'users', 'oauth_tokens', 'account_configs'];
         const checks = await Promise.all(
             indices.map(async (index: string) => {
                 const exists = await client.indices.exists({ index });

@@ -12,8 +12,12 @@ import {
     manageEmailIndex,
     getIndexStats
 } from '../controllers/email.controller';
+import { requireAuth } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// Apply authentication middleware to ALL routes
+router.use(requireAuth);
 
 
 /**

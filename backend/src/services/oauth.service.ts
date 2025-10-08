@@ -157,8 +157,10 @@ export const storeUserOAuthData = async (
 
     const configDoc: AccountConfigDocument = {
         id: accountId,
+        userId: 'legacy', // Legacy OAuth flow - needs migration to user-based auth
         email,
         authType: 'oauth',
+        isPrimary: false, // Legacy accounts are not primary by default
         isActive: true,
         createdAt: now,
         syncStatus: 'idle'

@@ -5,10 +5,13 @@ const OAUTH_TOKENS_INDEX = 'oauth_tokens';
 const ACCOUNT_CONFIGS_INDEX = 'account_configs';
 
 export const createOAuthTokensIndex = async (): Promise<void> => {
+    console.time('    🔍 Check OAuth tokens index');
     const client = getClient();
     const indexExists = await client.indices.exists({ index: OAUTH_TOKENS_INDEX });
+    console.timeEnd('    🔍 Check OAuth tokens index');
 
     if (!indexExists) {
+        console.time('    ➕ Create OAuth tokens index');
         await client.indices.create({
             index: OAUTH_TOKENS_INDEX,
             mappings: {
@@ -24,6 +27,7 @@ export const createOAuthTokensIndex = async (): Promise<void> => {
                 }
             }
         });
+        console.timeEnd('    ➕ Create OAuth tokens index');
         console.log(`✅ Created ${OAUTH_TOKENS_INDEX} index`);
     }
 };
@@ -103,24 +107,38 @@ export const deleteOAuthTokens = async (email: string): Promise<void> => {
 };
 
 export const createAccountConfigsIndex = async (): Promise<void> => {
+    console.time('    🔍 Check account configs index');
     const client = getClient();
     const indexExists = await client.indices.exists({ index: ACCOUNT_CONFIGS_INDEX });
+    console.timeEnd('    🔍 Check account configs index');
 
     if (!indexExists) {
+        console.time('    ➕ Create account configs index');
         await client.indices.create({
             index: ACCOUNT_CONFIGS_INDEX,
             mappings: {
                 properties: {
                     id: { type: 'keyword' },
+                    userId: { type: 'keyword' },
                     email: { type: 'keyword' },
                     authType: { type: 'keyword' },
+                    isPrimary: { type: 'boolean' },
                     isActive: { type: 'boolean' },
+                    imapConfig: {
+                        properties: {
+                            host: { type: 'keyword' },
+                            port: { type: 'integer' },
+                            secure: { type: 'boolean' },
+                            password: { type: 'text', index: false }
+                        }
+                    },
                     createdAt: { type: 'date' },
                     lastSyncAt: { type: 'date' },
                     syncStatus: { type: 'keyword' }
                 }
             }
         });
+        console.timeEnd('    ➕ Create account configs index');
         console.log(`✅ Created ${ACCOUNT_CONFIGS_INDEX} index`);
     }
 };
@@ -211,4 +229,93 @@ export const getActiveAccountConfigs = async (): Promise<AccountConfigDocument[]
         console.error('Error retrieving active account configs:', error);
         return [];
     }
+};
+
+/**
+ * Get account configs by user ID
+ */
+export const getAccountConfigsByUserId = async (userId: string): Promise<AccountConfigDocument[]> => {
+    try {
+        const client = getClient();
+        const response = await client.search({
+            index: ACCOUNT_CONFIGS_INDEX,
+            query: {
+                term: { userId: userId }
+            },
+            size: 100
+        });
+
+        return response.hits.hits.map((hit: any) => hit._source as AccountConfigDocument);
+    } catch (error) {
+        console.error('Error retrieving account configs by userId:', error);
+        return [];
+    }
+};
+
+/**
+ * Get account config by ID
+ */
+export const getAccountConfigById = async (accountId: string): Promise<AccountConfigDocument | null> => {
+    try {
+        const client = getClient();
+        const response = await client.get({
+            index: ACCOUNT_CONFIGS_INDEX,
+            id: accountId
+        });
+
+        if (!response._source) return null;
+
+        return response._source as AccountConfigDocument;
+    } catch (error: any) {
+        if (error.meta?.statusCode === 404) {
+            return null;
+        }
+        console.error('Error retrieving account config by ID:', error);
+        return null;
+    }
+};
+
+/**
+ * Update account config by ID
+ */
+export const updateAccountConfigById = async (accountId: string, updates: Partial<AccountConfigDocument>): Promise<void> => {
+    const client = getClient();
+    await client.update({
+        index: ACCOUNT_CONFIGS_INDEX,
+        id: accountId,
+        doc: updates,
+        refresh: 'wait_for'
+    });
+};
+
+/**
+ * Update multiple account configs by userId
+ */
+export const updateAccountConfigsByUserId = async (userId: string, updates: Partial<AccountConfigDocument>): Promise<void> => {
+    const client = getClient();
+    await client.updateByQuery({
+        index: ACCOUNT_CONFIGS_INDEX,
+        query: {
+            term: { userId: userId }
+        },
+        script: {
+            source: Object.entries(updates)
+                .map(([key, value]) => `ctx._source.${key} = params.${key}`)
+                .join('; '),
+            params: updates
+        },
+        refresh: true
+    });
+};
+
+/**
+ * Delete account config by ID
+ */
+export const deleteAccountConfigById = async (accountId: string): Promise<void> => {
+    const client = getClient();
+    await client.delete({
+        index: ACCOUNT_CONFIGS_INDEX,
+        id: accountId,
+        refresh: 'wait_for'
+    });
 };
