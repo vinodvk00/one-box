@@ -1,20 +1,18 @@
-import { createIndex } from './elasticsearch.service';
-import {
-    createOAuthTokensIndex,
-    createAccountConfigsIndex
-} from './oauth-storage.service';
-import { createUsersIndex } from './user.service';
+import { initializeRepositories } from '../core/container';
 
 /**
  * Initialize all required Elasticsearch indices
+ *
+ * REFACTORED: Now uses the dependency injection container
+ * This ensures all repositories are properly initialized
  */
 export const initializeDatabase = async (): Promise<void> => {
     try {
-        await createIndex();
-        await createUsersIndex();
-        await createOAuthTokensIndex();
-        await createAccountConfigsIndex();
+        console.log('🔧 Initializing database...');
+        await initializeRepositories();
+        console.log('✅ Database initialization complete!');
     } catch (error) {
+        console.error('❌ Database initialization failed:', error);
         throw error;
     }
 };
