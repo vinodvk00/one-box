@@ -192,12 +192,14 @@ router.get('/login/google', initiateOAuthLogin);
 
 /**
  * @openapi
- * /auth/login/google/callback:
+ * /auth/google/callback:
  *   get:
  *     tags:
  *       - User Authentication
  *     summary: Handle OAuth callback for app login
- *     description: Process OAuth callback, create/login user, and connect Gmail account
+ *     description: Process OAuth callback, create/login user, and connect Gmail account.
+ *                  This endpoint is shared with legacy OAuth flow but will create/login user
+ *                  and redirect to /auth/callback instead of /settings.
  *     parameters:
  *       - in: query
  *         name: code
@@ -210,13 +212,14 @@ router.get('/login/google', initiateOAuthLogin);
  *           type: string
  *         description: OAuth error from Google (if any)
  *     responses:
- *       '200':
- *         description: OAuth login successful
+ *       '302':
+ *         description: Redirects to frontend callback page
  *       '400':
  *         description: OAuth error or invalid code
  *       '500':
  *         description: OAuth callback failed
  */
-router.get('/login/google/callback', handleOAuthLoginCallback);
+// This route is intentionally removed - using the unified callback in auth.routes.ts
+// router.get('/google/callback', handleOAuthLoginCallback);
 
 export default router;

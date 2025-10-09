@@ -8,13 +8,10 @@ const USERS_INDEX = 'users';
  * Create the users index in Elasticsearch
  */
 export const createUsersIndex = async (): Promise<void> => {
-    console.time('    🔍 Check users index');
     const client = getClient();
     const indexExists = await client.indices.exists({ index: USERS_INDEX });
-    console.timeEnd('    🔍 Check users index');
 
     if (!indexExists) {
-        console.time('    ➕ Create users index');
         await client.indices.create({
             index: USERS_INDEX,
             mappings: {
@@ -34,8 +31,6 @@ export const createUsersIndex = async (): Promise<void> => {
                 }
             }
         });
-        console.timeEnd('    ➕ Create users index');
-        console.log(`✅ Created ${USERS_INDEX} index`);
     }
 };
 
@@ -96,7 +91,6 @@ export const findUserByEmail = async (email: string): Promise<User | null> => {
             ...(hit._source as UserDocument)
         };
     } catch (error) {
-        console.error('Error finding user by email:', error);
         return null;
     }
 };
@@ -122,7 +116,6 @@ export const findUserById = async (userId: string): Promise<User | null> => {
         if (error.meta?.statusCode === 404) {
             return null;
         }
-        console.error('Error finding user by ID:', error);
         return null;
     }
 };
@@ -187,7 +180,6 @@ export const getAllUsers = async (limit: number = 100): Promise<User[]> => {
             ...(hit._source as UserDocument)
         }));
     } catch (error) {
-        console.error('Error getting all users:', error);
         return [];
     }
 };

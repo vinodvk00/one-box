@@ -5,13 +5,10 @@ const OAUTH_TOKENS_INDEX = 'oauth_tokens';
 const ACCOUNT_CONFIGS_INDEX = 'account_configs';
 
 export const createOAuthTokensIndex = async (): Promise<void> => {
-    console.time('    🔍 Check OAuth tokens index');
     const client = getClient();
     const indexExists = await client.indices.exists({ index: OAUTH_TOKENS_INDEX });
-    console.timeEnd('    🔍 Check OAuth tokens index');
 
     if (!indexExists) {
-        console.time('    ➕ Create OAuth tokens index');
         await client.indices.create({
             index: OAUTH_TOKENS_INDEX,
             mappings: {
@@ -27,8 +24,6 @@ export const createOAuthTokensIndex = async (): Promise<void> => {
                 }
             }
         });
-        console.timeEnd('    ➕ Create OAuth tokens index');
-        console.log(`✅ Created ${OAUTH_TOKENS_INDEX} index`);
     }
 };
 
@@ -57,7 +52,6 @@ export const getOAuthTokens = async (email: string): Promise<OAuthTokenDocument 
                 return directResult._source as OAuthTokenDocument;
             }
         } catch (directError: any) {
-            console.log(`No direct document found for ID ${documentId}, falling back to search by email.`);
         }
 
         const response = await client.search({
@@ -74,7 +68,6 @@ export const getOAuthTokens = async (email: string): Promise<OAuthTokenDocument 
 
         return hits[0]._source as OAuthTokenDocument;
     } catch (error) {
-        console.error('Error retrieving OAuth tokens:', error);
         return null;
     }
 };
@@ -107,13 +100,10 @@ export const deleteOAuthTokens = async (email: string): Promise<void> => {
 };
 
 export const createAccountConfigsIndex = async (): Promise<void> => {
-    console.time('    🔍 Check account configs index');
     const client = getClient();
     const indexExists = await client.indices.exists({ index: ACCOUNT_CONFIGS_INDEX });
-    console.timeEnd('    🔍 Check account configs index');
 
     if (!indexExists) {
-        console.time('    ➕ Create account configs index');
         await client.indices.create({
             index: ACCOUNT_CONFIGS_INDEX,
             mappings: {
@@ -138,8 +128,6 @@ export const createAccountConfigsIndex = async (): Promise<void> => {
                 }
             }
         });
-        console.timeEnd('    ➕ Create account configs index');
-        console.log(`✅ Created ${ACCOUNT_CONFIGS_INDEX} index`);
     }
 };
 
@@ -168,7 +156,6 @@ export const getAccountConfig = async (email: string): Promise<AccountConfigDocu
 
         return hits[0]._source as AccountConfigDocument;
     } catch (error) {
-        console.error('Error retrieving account config:', error);
         return null;
     }
 };
@@ -184,7 +171,6 @@ export const getAllAccountConfigs = async (): Promise<AccountConfigDocument[]> =
 
         return response.hits.hits.map((hit: any) => hit._source as AccountConfigDocument);
     } catch (error) {
-        console.error('Error retrieving account configs:', error);
         return [];
     }
 };
@@ -226,7 +212,6 @@ export const getActiveAccountConfigs = async (): Promise<AccountConfigDocument[]
 
         return response.hits.hits.map((hit: any) => hit._source as AccountConfigDocument);
     } catch (error) {
-        console.error('Error retrieving active account configs:', error);
         return [];
     }
 };
@@ -240,14 +225,13 @@ export const getAccountConfigsByUserId = async (userId: string): Promise<Account
         const response = await client.search({
             index: ACCOUNT_CONFIGS_INDEX,
             query: {
-                term: { userId: userId }
+                term: { 'userId.keyword': userId }
             },
             size: 100
         });
 
         return response.hits.hits.map((hit: any) => hit._source as AccountConfigDocument);
     } catch (error) {
-        console.error('Error retrieving account configs by userId:', error);
         return [];
     }
 };
@@ -270,7 +254,6 @@ export const getAccountConfigById = async (accountId: string): Promise<AccountCo
         if (error.meta?.statusCode === 404) {
             return null;
         }
-        console.error('Error retrieving account config by ID:', error);
         return null;
     }
 };

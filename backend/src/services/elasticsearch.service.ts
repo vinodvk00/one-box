@@ -47,16 +47,10 @@ export interface SearchFilters {
 
 export const createIndex = async () => {
     try {
-        console.time('    ⏱️  ES client connection');
         const client = getClient();
-        console.timeEnd('    ⏱️  ES client connection');
-
-        console.time('    🔍 Check if index exists');
         const exists = await client.indices.exists({ index: EMAIL_INDEX });
-        console.timeEnd('    🔍 Check if index exists');
 
         if (!exists) {
-            console.time('    ➕ Create index with mappings');
             await client.indices.create({
                 index: EMAIL_INDEX,
                 settings: {
@@ -100,14 +94,9 @@ export const createIndex = async () => {
                     }
                 }
             });
-            console.timeEnd('    ➕ Create index with mappings');
-            console.log('Email index created with category support.');
-        } else {
-            console.log('Email index already exists, skipping creation.');
         }
     } catch (error: any) {
         if (error.meta?.body?.error?.type === 'resource_already_exists_exception') {
-            console.log('Email index already exists, continuing...');
             return;
         }
         throw error;
@@ -123,7 +112,6 @@ export const emailExists = async (id: string): Promise<boolean> => {
         });
         return exists;
     } catch (error) {
-        console.error(`Error checking email existence for ${id}:`, error);
         return false;
     }
 };
@@ -153,7 +141,6 @@ export const getUncategorizedEmailIds = async (): Promise<string[]> => {
 
         return result.hits.hits.map(hit => hit._id as string);
     } catch (error) {
-        console.error('Error fetching uncategorized email IDs:', error);
         return [];
     }
 };
@@ -180,7 +167,6 @@ export const bulkIndexEmails = async (emails: EmailDocument[]): Promise<{ indexe
         const newEmails = emails.filter(email => !existingIds.has(email.id));
 
         if (newEmails.length === 0) {
-            console.log(`All ${emails.length} emails already exist, skipping indexing.`);
             return { indexed: 0, skipped: emails.length };
         }
 
@@ -194,23 +180,16 @@ export const bulkIndexEmails = async (emails: EmailDocument[]): Promise<{ indexe
 
         const bulkResponse = await client.bulk({
             body: bulkBody,
-            refresh: false 
+            refresh: false
         });
 
         const errors = bulkResponse.items.filter((item: any) => item.index?.error);
-
-        if (errors.length > 0) {
-            console.error(`Bulk indexing had ${errors.length} errors:`, errors.slice(0, 3));
-        }
-
-        console.log(`✅ Bulk indexed ${newEmails.length} emails (skipped ${existingIds.size} existing)`);
 
         return {
             indexed: newEmails.length - errors.length,
             skipped: existingIds.size
         };
     } catch (error) {
-        console.error('Bulk indexing failed:', error);
         throw error;
     }
 };
@@ -220,7 +199,6 @@ export const indexEmail = async (email: EmailDocument) => {
     await bulkIndexEmails([email]);
 };
 
-// Bulk update email categories
 export const bulkUpdateEmailCategories = async (
     updates: Array<{ id: string; category: string }>
 ): Promise<void> => {
@@ -238,16 +216,7 @@ export const bulkUpdateEmailCategories = async (
             body: bulkBody,
             refresh: false
         });
-
-        const errors = response.items.filter((item: any) => item.update?.error);
-
-        if (errors.length > 0) {
-            console.error(`Bulk category update had ${errors.length} errors:`, errors.slice(0, 3));
-        } else {
-            console.log(`✅ Bulk updated ${updates.length} email categories`);
-        }
     } catch (error) {
-        console.error('Bulk category update failed:', error);
         throw error;
     }
 };
@@ -276,7 +245,6 @@ export const getEmailsByIds = async (ids: string[]): Promise<EmailDocument[]> =>
                 ...doc._source
             } as EmailDocument));
     } catch (error) {
-        console.error('Error fetching emails by IDs:', error);
         return [];
     }
 };

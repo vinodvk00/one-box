@@ -50,7 +50,6 @@ export const connectGmailAccount = async (req: Request, res: Response): Promise<
             authUrl
         });
     } catch (error) {
-        console.error('Gmail connection initiation error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to initiate Gmail connection'
@@ -172,7 +171,6 @@ export const handleGmailAccountCallback = async (req: Request, res: Response): P
             message: 'Gmail account connected successfully'
         });
     } catch (error: any) {
-        console.error('Gmail callback error:', error);
         delete req.session?.pendingAccountConnection;
 
         res.status(500).json({
@@ -270,7 +268,6 @@ export const connectImapAccount = async (req: Request, res: Response): Promise<v
             message: 'IMAP account connected successfully'
         });
     } catch (error) {
-        console.error('IMAP connection error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to connect IMAP account'
@@ -310,7 +307,6 @@ export const listConnectedAccounts = async (req: Request, res: Response): Promis
             total: accounts.length
         });
     } catch (error) {
-        console.error('List accounts error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to list accounts'
@@ -355,7 +351,6 @@ export const setPrimaryAccount = async (req: Request, res: Response): Promise<vo
             message: 'Primary account updated'
         });
     } catch (error) {
-        console.error('Set primary account error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to set primary account'
@@ -399,7 +394,6 @@ export const toggleAccountStatus = async (req: Request, res: Response): Promise<
             message: `Account ${newStatus ? 'activated' : 'deactivated'} successfully`
         });
     } catch (error) {
-        console.error('Toggle account status error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to toggle account status'
@@ -444,7 +438,6 @@ export const removeAccount = async (req: Request, res: Response): Promise<void> 
                 await updateUser(userId, { primaryEmailAccountId: otherAccount.id });
             }
         } else if (account.isPrimary) {
-            // This was the only account, clear primary
             await updateUser(userId, { primaryEmailAccountId: undefined });
         }
 
@@ -459,7 +452,6 @@ export const removeAccount = async (req: Request, res: Response): Promise<void> 
             message: 'Account removed successfully'
         });
     } catch (error) {
-        console.error('Remove account error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to remove account'

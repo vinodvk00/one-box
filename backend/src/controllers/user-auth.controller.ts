@@ -10,7 +10,7 @@ import { storeOAuthTokens } from '../services/oauth-storage.service';
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    process.env.GOOGLE_LOGIN_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI
 );
 
 /**
@@ -38,8 +38,6 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             message: 'Registration successful'
         });
     } catch (error: any) {
-        console.error('Registration error:', error);
-
         if (error.name === 'ValidationError') {
             res.status(400).json({
                 error: 'Validation Error',
@@ -77,8 +75,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             message: 'Login successful'
         });
     } catch (error: any) {
-        console.error('Login error:', error);
-
         if (error.name === 'ValidationError' || error.name === 'AuthenticationError') {
             res.status(401).json({
                 error: 'Authentication Failed',
@@ -102,7 +98,6 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     try {
         req.session.destroy((err) => {
             if (err) {
-                console.error('Logout error:', err);
                 res.status(500).json({
                     error: 'Internal Server Error',
                     message: 'Logout failed'
@@ -110,14 +105,13 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
                 return;
             }
 
-            res.clearCookie('connect.sid');
+            res.clearCookie('sessionId');
             res.json({
                 success: true,
                 message: 'Logged out successfully'
             });
         });
     } catch (error) {
-        console.error('Logout error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Logout failed'
@@ -166,7 +160,6 @@ export const getCurrentUser = async (req: Request, res: Response): Promise<void>
             totalAccounts: emailAccounts.length
         });
     } catch (error) {
-        console.error('Get current user error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to get user info'
@@ -230,8 +223,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
             message: 'Password changed successfully'
         });
     } catch (error: any) {
-        console.error('Change password error:', error);
-
         if (error.name === 'ValidationError') {
             res.status(400).json({
                 error: 'Validation Error',
@@ -268,7 +259,6 @@ export const initiateOAuthLogin = async (req: Request, res: Response): Promise<v
             authUrl
         });
     } catch (error) {
-        console.error('OAuth initiation error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to initiate OAuth login'
@@ -287,7 +277,6 @@ export const handleOAuthLoginCallback = async (req: Request, res: Response): Pro
         const { code, error } = req.query;
 
         if (error) {
-            console.error('OAuth error:', error);
             res.redirect(`${frontendUrl}/auth/callback?error=${encodeURIComponent(String(error))}`);
             return;
         }
@@ -357,7 +346,6 @@ export const handleOAuthLoginCallback = async (req: Request, res: Response): Pro
 
         req.session.save((err) => {
             if (err) {
-                console.error('Session save error:', err);
                 res.redirect(`${frontendUrl}/auth/callback?error=${encodeURIComponent('Failed to create session')}`);
                 return;
             }
@@ -365,8 +353,6 @@ export const handleOAuthLoginCallback = async (req: Request, res: Response): Pro
             res.redirect(`${frontendUrl}/auth/callback?success=true`);
         });
     } catch (error: any) {
-        console.error('OAuth callback error:', error);
-
         let errorMessage = 'OAuth callback failed';
         if (error.name === 'AuthenticationError') {
             errorMessage = error.message;

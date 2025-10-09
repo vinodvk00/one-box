@@ -14,7 +14,6 @@ export function useAsyncError(): UseAsyncErrorResult {
   const handleAsyncError = useCallback((error: unknown) => {
     const message = getErrorMessage(error);
     setError(message);
-    console.error("Async error:", error);
   }, []);
 
   const clearError = useCallback(() => {

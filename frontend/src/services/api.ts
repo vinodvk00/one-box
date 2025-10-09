@@ -14,6 +14,13 @@ import type {
   AccountConfig,
   AccountActionResponse,
 } from "@/types/email";
+import type {
+  User,
+  RegisterRequest,
+  LoginRequest,
+  ChangePasswordRequest,
+  AuthResponse,
+} from "@/types/auth";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -24,6 +31,7 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true, // Enable session cookies
 });
 
 apiClient.interceptors.request.use(
@@ -44,13 +52,6 @@ apiClient.interceptors.response.use(
       message: error.response?.data?.message,
       statusCode: error.response?.status,
     };
-
-    console.error("API Error:", {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      message: apiError.error,
-    });
 
     return Promise.reject(apiError);
   }
@@ -225,9 +226,9 @@ export const authApi = {
     return handleResponse(response);
   },
 
-  disconnectAccount: async (email: string): Promise<AccountActionResponse> => {
+  disconnectAccount: async (accountId: string): Promise<AccountActionResponse> => {
     const response = await apiClient.delete<AccountActionResponse>(
-      `/auth/accounts/${encodeURIComponent(email)}`
+      `/auth/accounts/${encodeURIComponent(accountId)}`
     );
     return handleResponse(response);
   },
@@ -264,11 +265,61 @@ export const healthApi = {
   },
 };
 
+export const userAuthApi = {
+  register: async (data: RegisterRequest): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>("/auth/register", data);
+    return handleResponse(response);
+  },
+
+  login: async (data: LoginRequest): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>("/auth/login", data);
+    return handleResponse(response);
+  },
+
+  logout: async (): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+      "/auth/logout"
+    );
+    return handleResponse(response);
+  },
+
+  getCurrentUser: async (): Promise<User> => {
+    const response = await apiClient.get<{
+      user: User;
+      emailAccounts?: any[];
+      totalAccounts?: number;
+    }>("/auth/me");
+    const data = handleResponse(response);
+    return data.user || (data as any);
+  },
+
+  changePassword: async (
+    data: ChangePasswordRequest
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.patch<{ success: boolean; message: string }>(
+      "/auth/change-password",
+      data
+    );
+    return handleResponse(response);
+  },
+
+  loginWithGoogle: async (): Promise<void> => {
+    const response = await apiClient.get<{ success: boolean; authUrl: string }>(
+      "/auth/login/google"
+    );
+    const result = handleResponse(response);
+    if (result.authUrl) {
+      window.location.href = result.authUrl;
+    }
+  },
+};
+
 const api = {
   emails: emailApi,
   replies: replyApi,
   training: trainingApi,
   auth: authApi,
+  userAuth: userAuthApi,
   health: healthApi,
 };
 

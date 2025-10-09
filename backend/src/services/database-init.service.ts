@@ -5,37 +5,21 @@ import {
 } from './oauth-storage.service';
 import { createUsersIndex } from './user.service';
 
-/*
+/**
  * Initialize all required Elasticsearch indices
  */
 export const initializeDatabase = async (): Promise<void> => {
-    console.log('🔧 Initializing database indices...');
-
     try {
-        console.time('  📧 Create emails index');
         await createIndex();
-        console.timeEnd('  📧 Create emails index');
-
-        console.time('  👤 Create users index');
         await createUsersIndex();
-        console.timeEnd('  👤 Create users index');
-
-        console.time('  🔑 Create OAuth tokens index');
         await createOAuthTokensIndex();
-        console.timeEnd('  🔑 Create OAuth tokens index');
-
-        console.time('  ⚙️  Create account configs index');
         await createAccountConfigsIndex();
-        console.timeEnd('  ⚙️  Create account configs index');
-
-        console.log('✅ Database initialization completed successfully');
     } catch (error) {
-        console.error('❌ Database initialization failed:', error);
         throw error;
     }
 };
 
-/*
+/**
  * Check if all required indices exist
  */
 export const validateDatabaseSetup = async (): Promise<boolean> => {
@@ -57,14 +41,11 @@ export const validateDatabaseSetup = async (): Promise<boolean> => {
         const missingIndices = checks.filter((check: any) => !check.exists);
 
         if (missingIndices.length > 0) {
-            console.warn('⚠️  Missing indices:', missingIndices.map((i: any) => i.index));
             return false;
         }
 
-        console.log('✅ All required indices exist');
         return true;
     } catch (error) {
-        console.error('❌ Database validation failed:', error);
         return false;
     }
 };

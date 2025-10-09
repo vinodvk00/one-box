@@ -184,11 +184,7 @@ export const useEmailStore = create<EmailState>()(
 
         try {
           const result = await api.emails.categorizeEmail(id);
-
-          // Update the email with the new category
           get().updateEmail(id, { category: result.category });
-
-          // Refresh category stats
           await get().fetchCategoryStats();
 
           return true;
@@ -208,8 +204,7 @@ export const useEmailStore = create<EmailState>()(
           const stats = await api.emails.getCategoryStats();
           set({ categoryStats: stats }, false, "fetchCategoryStats");
         } catch (err) {
-          const apiError = err as ApiError;
-          console.error("Failed to fetch category stats:", apiError.error);
+          // Silently fail on category stats fetch
         }
       },
 
@@ -217,8 +212,6 @@ export const useEmailStore = create<EmailState>()(
         try {
           return await api.emails.getEmailById(id);
         } catch (err) {
-          const apiError = err as ApiError;
-          console.error("Failed to fetch email by ID:", apiError.error);
           return null;
         }
       },

@@ -80,7 +80,6 @@ export const requireAccountAccess = async (
 
         next();
     } catch (error) {
-        console.error('Error in requireAccountAccess middleware:', error);
         res.status(500).json({
             error: 'Internal Server Error',
             message: 'Failed to verify account access'
@@ -90,11 +89,8 @@ export const requireAccountAccess = async (
 
 /**
  * Middleware to check if user is authenticated (optional)
- * NOTE: Unlike requireAuth, this does not block the request if user is not authenticated
- * Just attaches user info to request if session exists
+ * Unlike requireAuth, this does not block the request if user is not authenticated
  */
 export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
-    // Session is already attached by session middleware
-    // This middleware is just a marker for optional auth routes
     next();
 };

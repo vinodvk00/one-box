@@ -116,9 +116,7 @@ export async function withRetry<T>(
 }
 
 export function handleAsyncError(error: unknown): void {
-  console.error("Async error:", error);
   const message = getErrorMessage(error);
-  console.error("User-facing error:", message);
 }
 
 export class ValidationError extends Error {

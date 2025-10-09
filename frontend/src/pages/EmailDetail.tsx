@@ -64,7 +64,6 @@ export function EmailDetail() {
         }
       } catch (err) {
         setError("Failed to load email");
-        console.error("Error loading email:", err);
       } finally {
         setLoading(false);
       }

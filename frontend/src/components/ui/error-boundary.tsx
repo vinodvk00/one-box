@@ -25,8 +25,6 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("ErrorBoundary caught an error:", error, errorInfo);
-
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
     }
@@ -89,7 +87,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
 export function useErrorHandler() {
   const handleError = React.useCallback((error: Error) => {
-    console.error("Error caught by useErrorHandler:", error);
+    // Error handler for programmatic error handling
   }, []);
 
   return handleError;

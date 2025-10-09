@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { authApi, emailApi } from '@/services/api';
 import { useEmailStore } from '@/stores/emailStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { AccountConfig } from '@/types/email';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -26,15 +28,10 @@ export function Settings() {
     try {
       setLoading(true);
       setError(null);
-      console.log('🔄 Loading accounts...');
 
       const response = await authApi.getConnectedAccounts();
-      console.log('📥 Received accounts response:', response);
-
       setAccounts(response.accounts);
-      console.log('✅ Accounts state updated with', response.accounts.length, 'accounts');
     } catch (err: any) {
-      console.error('❌ Failed to load accounts:', err);
       setError(err.error || 'Failed to load accounts');
     } finally {
       setLoading(false);
@@ -45,40 +42,35 @@ export function Settings() {
     authApi.initiateGmailOAuth();
   };
 
-  const handleDisconnect = async (email: string) => {
-    if (!confirm(`Are you sure you want to disconnect ${email}? This will remove all associated data.`)) {
+  const handleDisconnect = async (accountId: string) => {
+    const account = accounts.find(a => a.id === accountId);
+    if (!account) {
+      setError('Account not found');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to disconnect ${account.email}? This will remove all associated data.`)) {
       return;
     }
 
     try {
       setError(null);
       setSyncMessage(null);
-      console.log(`🔌 Attempting to disconnect ${email}...`);
 
-      const result = await authApi.disconnectAccount(email);
-      console.log(`✅ Successfully disconnected ${email}`, result);
+      const result = await authApi.disconnectAccount(accountId);
+      setSyncMessage(`✅ Successfully disconnected ${account.email}`);
 
-      setSyncMessage(`✅ Successfully disconnected ${email}`);
-
-      // Remove the disconnected account from state immediately
-      setAccounts(prevAccounts => {
-        const updatedAccounts = prevAccounts.filter(account => account.email !== email);
-        console.log(`📋 Updated accounts list, removed ${email}. New count: ${updatedAccounts.length}`);
-        return updatedAccounts;
-      });
+      setAccounts(prevAccounts => prevAccounts.filter(a => a.id !== accountId));
 
       Promise.all([
-        refreshEmails().catch(e => console.warn('Failed to refresh emails:', e)),
-        fetchCategoryStats().catch(e => console.warn('Failed to refresh category stats:', e))
+        refreshEmails().catch(() => {}),
+        fetchCategoryStats().catch(() => {})
       ]).then(() => {
         triggerRefresh();
-        console.log('🔄 Global refresh completed');
       });
 
     } catch (err: any) {
-      console.error(`❌ Failed to disconnect ${email}:`, err);
       setError(err.error || 'Failed to disconnect account');
-
       loadAccounts();
     }
   };
@@ -87,24 +79,19 @@ export function Settings() {
     try {
       setError(null);
       setSyncMessage(null);
-      console.log(`🔄 Attempting to force reconnect ${email}...`);
 
       const result = await authApi.forceReconnectAccount(email);
 
       if (result.redirectToAuth && result.authUrl) {
         window.location.href = result.authUrl;
       } else {
-        console.log(`✅ Force reconnect completed for ${email}`);
         setSyncMessage(result.message);
-
         await loadAccounts();
-
         await refreshEmails();
         await fetchCategoryStats();
         triggerRefresh();
       }
     } catch (err: any) {
-      console.error(`❌ Failed to force reconnect ${email}:`, err);
       setError(err.error || 'Failed to initiate force reconnect');
     }
   };
@@ -113,35 +100,27 @@ export function Settings() {
     try {
       setError(null);
       setSyncMessage(null);
-      console.log(`⚡ Toggling status for ${email}...`);
 
       await authApi.toggleAccountStatus(email);
-      console.log(`✅ Successfully toggled status for ${email}`);
-
       setSyncMessage(`✅ Successfully updated status for ${email}`);
 
-      setAccounts(prevAccounts => {
-        const updatedAccounts = prevAccounts.map(account =>
+      setAccounts(prevAccounts =>
+        prevAccounts.map(account =>
           account.email === email
             ? { ...account, isActive: !account.isActive }
             : account
-        );
-        console.log(`📋 Updated status for ${email} in local state`);
-        return updatedAccounts;
-      });
+        )
+      );
 
       Promise.all([
-        refreshEmails().catch(e => console.warn('Failed to refresh emails:', e)),
-        fetchCategoryStats().catch(e => console.warn('Failed to refresh category stats:', e))
+        refreshEmails().catch(() => {}),
+        fetchCategoryStats().catch(() => {})
       ]).then(() => {
         triggerRefresh();
-        console.log('🔄 Global refresh completed after status toggle');
       });
 
     } catch (err: any) {
-      console.error(`❌ Failed to toggle status for ${email}:`, err);
       setError(err.error || 'Failed to toggle account status');
-
       loadAccounts();
     }
   };
@@ -167,8 +146,6 @@ export function Settings() {
       await refreshEmails();
       await fetchCategoryStats();
       triggerRefresh();
-
-      console.log('✅ Email sync completed:', result);
     } catch (err: any) {
       setError(err.error || 'Failed to sync emails');
     } finally {
@@ -185,21 +162,17 @@ export function Settings() {
       setSyncLoading(true);
       setSyncMessage(null);
       setError(null);
-      console.log(`🗑️ Deleting email index for ${email}...`);
 
       const result = await emailApi.manageEmailIndex({
         action: 'delete',
         email
       });
 
-      console.log(`✅ Successfully deleted email index for ${email}`);
       setSyncMessage(result.message);
-
       await refreshEmails();
       await fetchCategoryStats();
       triggerRefresh();
     } catch (err: any) {
-      console.error(`❌ Failed to delete email index for ${email}:`, err);
       setError(err.error || 'Failed to delete email index');
     } finally {
       setSyncLoading(false);
@@ -250,7 +223,6 @@ export function Settings() {
         </div>
       )}
 
-      {/* Connected Accounts List */}
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-4">Connected Accounts ({accounts.length})</h2>
 
@@ -345,7 +317,7 @@ export function Settings() {
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => handleDisconnect(account.email)}
+                        onClick={() => handleDisconnect(account.id)}
                       >
                         Disconnect
                       </Button>
@@ -358,7 +330,6 @@ export function Settings() {
         )}
       </Card>
 
-      {/* Email Sync Configuration */}
       <Card className="p-6">
         <div className="flex items-center gap-2 mb-4">
           <h2 className="text-lg font-semibold">Email Synchronization</h2>
@@ -369,7 +340,6 @@ export function Settings() {
         </p>
 
         <div className="space-y-6 mb-6">
-          {/* Days Back Slider */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label htmlFor="days-back" className="text-sm font-medium">
@@ -396,7 +366,6 @@ export function Settings() {
             </p>
           </div>
 
-          {/* Max Emails Slider */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label htmlFor="max-emails" className="text-sm font-medium">
@@ -423,7 +392,6 @@ export function Settings() {
             </p>
           </div>
 
-          {/* Force Re-index Toggle */}
           <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-900">
             <div className="flex-1">
               <Label htmlFor="force-reindex" className="text-sm font-medium cursor-pointer text-orange-900 dark:text-orange-100">
@@ -441,7 +409,6 @@ export function Settings() {
           </div>
         </div>
 
-        {/* Sync Actions */}
         <div className="space-y-3">
           <div className="flex gap-3">
             <Button
@@ -459,7 +426,6 @@ export function Settings() {
             )}
           </div>
 
-          {/* Performance Estimate */}
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-md">
             <strong>Estimated sync time:</strong> ~{Math.ceil(maxEmails * 0.11)} seconds for {maxEmails} emails
             ({Math.ceil(maxEmails * 0.11 / 60)} {Math.ceil(maxEmails * 0.11 / 60) === 1 ? 'minute' : 'minutes'})
@@ -468,14 +434,12 @@ export function Settings() {
         </div>
       </Card>
 
-      {/* OAuth Connection Section */}
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-4">Email Account Connections</h2>
 
         <div className="space-y-4">
-          {/* Gmail OAuth Option */}
           <div className="border rounded-lg p-4">
-            <h3 className="font-medium text-green-600 mb-2">🔒 Gmail OAuth (Recommended)</h3>
+            <h3 className="font-medium text-green-600 mb-2">Gmail OAuth (Recommended)</h3>
             <p className="text-sm text-gray-600 mb-3">
               Secure OAuth 2.0 authentication with Google. No app passwords required.
             </p>
@@ -484,9 +448,8 @@ export function Settings() {
             </Button>
           </div>
 
-          {/* IMAP Info */}
           <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700">
-            <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">📧 IMAP Authentication</h3>
+            <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">IMAP Authentication</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Traditional email credentials are configured via environment variables.
               Currently active IMAP accounts are shown below.
@@ -495,14 +458,167 @@ export function Settings() {
         </div>
       </Card>
 
-      
+      <UserProfileSection />
 
-      {/* Refresh Button */}
       <div className="flex justify-center">
         <Button variant="outline" onClick={loadAccounts}>
           Refresh Accounts
         </Button>
       </div>
     </div>
+  );
+}
+
+function UserProfileSection() {
+  const { user, changePassword } = useAuthStore();
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+
+  if (!user) {
+    return null;
+  }
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+
+    const success = await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+    if (success) {
+      setPasswordSuccess('Password changed successfully');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setIsChangingPassword(false);
+    } else {
+      setPasswordError('Failed to change password. Please check your current password.');
+    }
+  };
+
+  return (
+    <Card className="p-6">
+      <h2 className="text-lg font-semibold mb-4">User Profile</h2>
+
+      <div className="space-y-4">
+        <div>
+          <Label className="text-sm text-gray-600">Name</Label>
+          <p className="text-base font-medium">{user.name}</p>
+        </div>
+
+        <div>
+          <Label className="text-sm text-gray-600">Email</Label>
+          <p className="text-base font-medium">{user.email}</p>
+        </div>
+
+        <div>
+          <Label className="text-sm text-gray-600">Role</Label>
+          <p className="text-base font-medium capitalize">{user.role}</p>
+        </div>
+
+        <div>
+          <Label className="text-sm text-gray-600">Authentication Method</Label>
+          <p className="text-base font-medium capitalize">{user.authMethod}</p>
+        </div>
+
+        {user.authMethod === 'password' && (
+          <div className="pt-4 border-t">
+            {!isChangingPassword ? (
+              <Button
+                variant="outline"
+                onClick={() => setIsChangingPassword(true)}
+              >
+                Change Password
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                {passwordError && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-3 text-red-600 text-sm">
+                    {passwordError}
+                  </div>
+                )}
+
+                {passwordSuccess && (
+                  <div className="bg-green-50 border border-green-200 rounded-md p-3 text-green-600 text-sm">
+                    {passwordSuccess}
+                  </div>
+                )}
+
+                <form onSubmit={handlePasswordChange} className="space-y-3">
+                  <div>
+                    <Label htmlFor="currentPassword">Current Password</Label>
+                    <Input
+                      id="currentPassword"
+                      type="password"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) =>
+                        setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="newPassword">New Password</Label>
+                    <Input
+                      id="newPassword"
+                      type="password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) =>
+                        setPasswordForm({ ...passwordForm, newPassword: e.target.value })
+                      }
+                      required
+                      minLength={8}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) =>
+                        setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button type="submit">Update Password</Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setIsChangingPassword(false);
+                        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                        setPasswordError('');
+                        setPasswordSuccess('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
