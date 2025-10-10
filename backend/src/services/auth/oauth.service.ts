@@ -1,8 +1,8 @@
 import { OAuth2Client } from 'google-auth-library';
 import { google } from 'googleapis';
-import { GoogleOAuthConfig, TokenSet, OAuthTokenDocument, AccountConfigDocument } from '../types/auth.types';
-import { IOAuthRepository } from '../repositories/interfaces/oauth.interface';
-import { IAccountRepository } from '../repositories/interfaces/account.interface';
+import { GoogleOAuthConfig, TokenSet, OAuthTokenDocument, AccountConfigDocument } from '../../types/auth.types';
+import { IOAuthRepository } from '../../repositories/interfaces/oauth.interface';
+import { IAccountRepository } from '../../repositories/interfaces/account.interface';
 
 const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -200,7 +200,7 @@ export class OAuthService {
      */
     async disconnectOAuthAccount(email: string): Promise<void> {
         try {
-            const { clearTokenCache } = await import('./gmail.service');
+            const { clearTokenCache } = await import('../email/gmail.service');
             clearTokenCache(email);
 
             await this.oauthRepo.deleteTokens(email);

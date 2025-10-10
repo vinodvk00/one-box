@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { IUserRepository } from '../repositories/interfaces/user.interface';
-import { CreateUserInput, User, LoginInput } from '../types/user.types';
+import { IUserRepository } from '../../repositories/interfaces/user.interface';
+import { CreateUserInput, User, LoginInput } from '../../types/user.types';
 
 const BCRYPT_ROUNDS = 10;
 

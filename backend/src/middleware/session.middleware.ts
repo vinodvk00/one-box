@@ -1,5 +1,5 @@
 import session from 'express-session';
-import { getRedisClient } from '../services/redis.service';
+import { getRedisClient } from '../services/shared/redis.service';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { RedisStore } = require('connect-redis');

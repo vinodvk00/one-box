@@ -1,13 +1,16 @@
 import { Request, Response } from 'express';
-import { getEmailById, type EmailDocument } from '../../services/elasticsearch.service';
-import { generateReplySuggestion } from '../../services/rag-suggestion-services/reply-suggestion.service';
+import { emailRepository } from '../../core/container';
+import { generateReplySuggestion } from '../../services/ai/suggestions/reply-suggestion.service';
+
+// Type for email document (should match EmailDocument from the service)
+type EmailDocument = any; // TODO: Import proper type from email.types.ts
 
 /**
  * Get AI-suggested reply for an email
  */
 export const suggestReply = async (req: Request, res: Response) => {
     try {
-        const email = await getEmailById(req.params.id) as EmailDocument;
+        const email = await emailRepository.getById(req.params.id) as EmailDocument;
 
         if (!email) {
             return res.status(404).json({ error: 'Email not found' });

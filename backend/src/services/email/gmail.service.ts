@@ -1,6 +1,6 @@
 import { gmail_v1, google } from 'googleapis';
-import { oauthService } from '../core/container';
-import { EmailDocument, indexEmail, bulkIndexEmails } from './elasticsearch.service';
+import { oauthService, indexEmail, bulkIndexEmails } from '../../core/container';
+import { EmailDocument } from '../../types/email.types';
 
 interface CachedToken {
     accessToken: string;
@@ -56,7 +56,7 @@ const getGmailClient = async (email: string, retryCount = 0): Promise<gmail_v1.G
 
         clearTokenCache(email);
 
-        // If authentication failed and we haven't retried yet, try to force refresh
+        // If authentication failed and not retried yet, try to force refresh
         if (retryCount < 1 && (error.message?.includes('No refresh token') || error.message?.includes('Failed to refresh'))) {
             console.log(`🔄 Attempting to force refresh tokens for ${email}...`);
             try {
@@ -350,7 +350,7 @@ export const fetchGmailMessages = async (
 };
 
 export const syncAllOAuthAccounts = async (daysBack: number = 30): Promise<void> => {
-    const { accountRepository } = await import('../core/container');
+    const { accountRepository } = await import('../../core/container');
     const syncStartTime = Date.now();
 
     try {

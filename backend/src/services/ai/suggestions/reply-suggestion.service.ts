@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { searchSimilarTraining } from './vector-store.service';
-import { EmailDocument } from '../elasticsearch.service';
+import { EmailDocument } from '../../../types/email.types';
 import dotenv from 'dotenv';
 dotenv.config();
 

@@ -3,11 +3,11 @@ import { emailService, oauthService } from '../core/container';
 import {
     startBatchCategorization as startBatchCategorizationService,
     isBatchCategorizationRunning
-} from '../services/batch-categorization.service';
+} from '../services/ai/batch-categorization.service';
 import {
     fetchGmailMessages,
     syncAllOAuthAccounts
-} from '../services/gmail.service';
+} from '../services/email/gmail.service';
 
 // TODO: options for number of emails, days back, force reindex
 

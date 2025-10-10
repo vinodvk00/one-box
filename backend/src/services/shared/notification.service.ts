@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { integrationConfig } from '../config/integrations';
-import { EmailDocument } from './elasticsearch.service';
+import { integrationConfig } from '../../config/integrations';
+import { EmailDocument } from '../../types/email.types';
 
 /**
  * Sends a rich notification to a configured Slack channel when an email is marked as 'Interested'.

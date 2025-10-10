@@ -1,4 +1,4 @@
-import { EmailDocument, SearchFilters } from '../../services/elasticsearch.service';
+import { EmailDocument, SearchFilters } from '../../types/email.types';
 
 /**
  * Email Repository Interface

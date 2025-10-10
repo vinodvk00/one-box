@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { getAccountConfigById } from '../services/oauth-storage.service';
+import { accountRepository } from '../core/container';
 
 /**
  * Middleware to require authentication
@@ -60,7 +60,7 @@ export const requireAccountAccess = async (
             return;
         }
 
-        const account = await getAccountConfigById(accountId);
+        const account = await accountRepository.getById(accountId);
 
         if (!account) {
             res.status(404).json({

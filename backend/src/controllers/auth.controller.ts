@@ -130,12 +130,41 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
                 res.redirect(`${frontendUrl}/auth/callback?success=true`);
             });
         } else {
+            // Account connection flow (user already logged in)
+            const userId = req.session.userId!;
+            const { nanoid } = await import('nanoid');
+
             const existingConnection = await oauthService.hasValidOAuthConnection(email);
             if (existingConnection) {
                 await oauthService.disconnectOAuthAccount(email);
             }
 
-            await oauthService.storeUserOAuthData(email, tokens);
+            // Create account record with proper userId
+            const accountId = `acc_${nanoid(12)}`;
+            const existingAccounts = await accountRepository.getByUserId(userId);
+            const isPrimary = existingAccounts.length === 0;
+
+            await accountRepository.store({
+                id: accountId,
+                userId: userId,
+                email: email,
+                authType: 'oauth',
+                isPrimary,
+                isActive: true,
+                syncStatus: 'idle',
+                createdAt: new Date()
+            });
+
+            // Store OAuth tokens
+            await oauthRepository.storeTokens({
+                id: `oauth_${email}`,
+                email: email,
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken || undefined,
+                tokenExpiry: tokens.expiryDate ? new Date(tokens.expiryDate) : undefined,
+                scope: tokens.scope || ['https://www.googleapis.com/auth/gmail.readonly'],
+                createdAt: new Date()
+            });
 
             const redirectUrl = `${frontendUrl}/settings?oauth=success&email=${encodeURIComponent(email)}`;
             res.redirect(redirectUrl);

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { authService, userService } from '../core/container';
 import { toUserResponse } from '../types/user.types';
-import { ValidationError, AuthenticationError } from '../services/auth.service';
+import { ValidationError, AuthenticationError } from '../services/auth/auth.service';
 
 /**
  * Register a new user

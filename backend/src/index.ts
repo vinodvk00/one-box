@@ -10,7 +10,7 @@ import emailRoutes from "./routes/email.routes";
 import authRoutes from './routes/auth.routes';
 import userAuthRoutes from './routes/user-auth.routes';
 import accountManagementRoutes from './routes/account-management.routes';
-import { initializeDatabase } from './services/database-init.service';
+import { initializeDatabase } from './services/shared/database-init.service';
 import { createSessionMiddleware } from './middleware/session.middleware';
 import statusMonitor from 'express-status-monitor';
 import morgan from 'morgan';

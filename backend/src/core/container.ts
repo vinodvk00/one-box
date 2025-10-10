@@ -35,10 +35,10 @@ export const emailRepository: IEmailRepository = new ElasticsearchEmailRepositor
  * Services contain business logic and use repositories for data access
  */
 
-import { UserService } from '../services/user.service';
-import { AuthService } from '../services/auth.service';
-import { OAuthService } from '../services/oauth.service';
-import { EmailService } from '../services/email.service';
+import { UserService } from '../services/auth/user.service';
+import { AuthService } from '../services/auth/auth.service';
+import { OAuthService } from '../services/auth/oauth.service';
+import { EmailService } from '../services/email/email.service';
 
 // Create service instances (inject repositories)
 export const userService = new UserService(userRepository);
@@ -80,3 +80,82 @@ export async function initializeRepositories(): Promise<void> {
  * TODO: Remove this export after full migration to DI
  */
 export { esClient };
+
+/**
+ * ============================================
+ * Export Type Definitions
+ * ============================================
+ * Centralized type exports for legacy services
+ */
+export { EmailDocument, SearchFilters, EmailContent } from '../types/email.types';
+
+/**
+ * ============================================
+ * Legacy Helper Functions (for backward compatibility)
+ * ============================================
+ * These functions wrap emailService methods for legacy code
+ * TODO: Refactor legacy services to use emailService directly
+ */
+
+/**
+ * Create email index (legacy wrapper)
+ */
+export const createIndex = async (): Promise<void> => {
+    return await emailRepository.createIndex();
+};
+
+/**
+ * Check if email exists (legacy wrapper)
+ */
+export const emailExists = async (emailId: string): Promise<boolean> => {
+    return await emailService.emailExists(emailId);
+};
+
+/**
+ * Index a single email (legacy wrapper)
+ */
+export const indexEmail = async (email: any): Promise<void> => {
+    return await emailService.indexEmail(email);
+};
+
+/**
+ * Bulk index emails (legacy wrapper)
+ */
+export const bulkIndexEmails = async (emails: any[]): Promise<{ indexed: number; skipped: number }> => {
+    return await emailService.bulkIndexEmails(emails);
+};
+
+/**
+ * Get uncategorized email IDs (legacy wrapper)
+ */
+export const getUncategorizedEmailIds = async (): Promise<string[]> => {
+    return await emailService.getUncategorizedEmailIds();
+};
+
+/**
+ * Get emails by IDs (legacy wrapper)
+ */
+export const getEmailsByIds = async (emailIds: string[]): Promise<any[]> => {
+    return await emailService.getEmailsByIds(emailIds);
+};
+
+/**
+ * Update email category (legacy wrapper)
+ */
+export const updateEmailCategory = async (emailId: string, category: string): Promise<void> => {
+    return await emailService.updateEmailCategory(emailId, category);
+};
+
+/**
+ * Bulk update email categories (legacy wrapper)
+ */
+export const bulkUpdateEmailCategories = async (updates: Array<{ id: string; category: string }>): Promise<void> => {
+    return await emailService.bulkUpdateEmailCategories(updates);
+};
+
+/**
+ * Get category statistics (legacy wrapper)
+ */
+export const getCategoryStats = async (): Promise<Array<{ category: string; count: number }>> => {
+    return await emailService.getCategoryStats();
+};

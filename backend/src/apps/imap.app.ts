@@ -1,5 +1,5 @@
 import { accounts } from '../config/accounts';
-import { startSyncForAccount, ImapConfig } from '../services/imap.service';
+import { startSyncForAccount, ImapConfig } from '../services/email/imap.service';
 
 const initializeEmailSync = () => {
     console.log('Starting email synchronization for all loaded accounts...');

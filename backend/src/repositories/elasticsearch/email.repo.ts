@@ -1,6 +1,6 @@
 import { Client } from '@elastic/elasticsearch';
 import { IEmailRepository } from '../interfaces/email.interface';
-import { EmailDocument, SearchFilters } from '../../services/elasticsearch.service';
+import { EmailDocument, SearchFilters } from '../../types/email.types';
 
 /**
  * Elasticsearch Email Repository

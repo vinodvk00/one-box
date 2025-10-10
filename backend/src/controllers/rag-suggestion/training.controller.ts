@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { addTrainingData as addTrainingDataService, createTrainingIndex, TrainingData } from '../../services/rag-suggestion-services/vector-store.service';
+import { addTrainingData as addTrainingDataService, createTrainingIndex, TrainingData } from '../../services/ai/suggestions/vector-store.service';
 
 /**
  * Add training data for reply suggestions

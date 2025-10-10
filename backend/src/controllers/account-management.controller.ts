@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { google } from 'googleapis';
 import { nanoid } from 'nanoid';
 import { accountRepository, oauthRepository, userService } from '../core/container';
-import { encrypt } from '../services/encryption.service';
+import { encrypt } from '../services/shared/encryption.service';
 import { ImapFlow } from 'imapflow';
 
 const oauth2Client = new google.auth.OAuth2(

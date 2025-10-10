@@ -1,9 +1,10 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { createIndex, indexEmail, EmailDocument, emailExists, getUncategorizedEmailIds, getCategoryStats } from './elasticsearch.service';
-import { categorizeEmail, EmailContent, isConfigured } from './ai-categorization.service';
-import { startBatchCategorization, isBatchCategorizationRunning, getBatchCategorizationState } from './batch-categorization.service';
-import { handleInterestedEmail } from './notification.service';
+import { createIndex, indexEmail, emailExists, getUncategorizedEmailIds, getCategoryStats } from '../../core/container';
+import { EmailDocument } from '../../types/email.types';
+import { categorizeEmail, EmailContent, isConfigured } from '../ai/ai-categorization.service';
+import { startBatchCategorization, isBatchCategorizationRunning, getBatchCategorizationState } from '../ai/batch-categorization.service';
+import { handleInterestedEmail } from '../shared/notification.service';
 
 export interface ImapConfig {
     host: string;
@@ -227,7 +228,6 @@ const processNewEmail = async (
 
         const emailId = `${config.auth.user}_${msg.uid}`;
 
-        // Check if this new email already exists (edge case)
         const exists = await emailExists(emailId);
         if (exists) {
             console.log(`[${config.auth.user}] New email already exists, skipping.`);
@@ -250,9 +250,8 @@ const processNewEmail = async (
 export const startSyncForAccount = async (config: ImapConfig): Promise<void> => {
     await createIndex();
 
-    // Validate AI configuration upfront
     if (!isConfigured()) {
-        console.warn(`⚠️  [${config.auth.user}] GEMENI_API_KEY not configured. Emails will not be categorized.`);
+        console.warn(`⚠️  [${config.auth.user}] keys not configured. Emails will not be categorized.`);
     }
 
     const client = new ImapFlow({
@@ -272,19 +271,15 @@ export const startSyncForAccount = async (config: ImapConfig): Promise<void> => 
         const lock = await client.getMailboxLock('INBOX', { readOnly: true });
 
         try {
-            // Step 1: Fetch and index historical emails
             const thirtyDaysAgo = createDateThreshold(30);
             const { indexed, skipped } = await processHistoricalEmails(client, config, thirtyDaysAgo);
 
             console.log(`[${config.auth.user}] Initial fetch complete. New: ${indexed}, Skipped: ${skipped}`);
 
-            // Step 2: Show current categorization status
             await logCategorizationStatus(config.auth.user);
 
-            // Step 3: Ensure ALL emails are categorized (including existing uncategorized ones)
             await ensureAllEmailsCategorized(config.auth.user);
 
-            // Step 4: Set up listener for new emails
             client.on('exists', (data) => {
                 console.log(`[${config.auth.user}] New email arrived. Total in INBOX: ${data.count}`);
                 handleNewEmail();

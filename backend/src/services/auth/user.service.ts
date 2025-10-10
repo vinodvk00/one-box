@@ -1,8 +1,8 @@
-import { IUserRepository } from '../repositories/interfaces/user.interface';
-import { User, CreateUserInput, UserResponse, toUserResponse } from '../types/user.types';
+import { IUserRepository } from '../../repositories/interfaces/user.interface';
+import { User, CreateUserInput, UserResponse, toUserResponse } from '../../types/user.types';
 
 /**
- * User Service (Refactored with Dependency Injection)
+ * User Service
  */
 export class UserService {
     /**

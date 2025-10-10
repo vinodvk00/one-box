@@ -1,6 +1,7 @@
-import { getUncategorizedEmailIds, getEmailsByIds, updateEmailCategory, bulkUpdateEmailCategories, EmailDocument } from './elasticsearch.service';
+import { getUncategorizedEmailIds, getEmailsByIds, updateEmailCategory, bulkUpdateEmailCategories } from '../../core/container';
+import { EmailDocument } from '../../types/email.types';
 import { categorizeEmailBatch, BatchEmailInput, BatchCategorizationResult } from './ai-categorization.service';
-import { handleInterestedEmail } from './notification.service';
+import { handleInterestedEmail } from '../shared/notification.service';
 
 interface BatchCategorizationState {
     totalProcessed: number;

@@ -1,8 +1,8 @@
-import { IEmailRepository } from '../repositories/interfaces/email.interface';
-import { EmailDocument, SearchFilters } from './elasticsearch.service';
+import { IEmailRepository } from '../../repositories/interfaces/email.interface';
+import { EmailDocument, SearchFilters } from '../../types/email.types';
 
 /**
- * Email Service (Class-based with Dependency Injection)
+ * Email Service 
  */
 export class EmailService {
     constructor(private emailRepo: IEmailRepository) {}
@@ -119,7 +119,7 @@ export class EmailService {
      * Categorize email by ID (uses AI categorization)
      */
     async categorizeEmailById(emailId: string): Promise<{ category: string } | null> {
-        const { categorizeEmail } = await import('./ai-categorization.service');
+        const { categorizeEmail } = await import('../ai/ai-categorization.service');
 
         const emailResult = await this.getEmailById(emailId);
         const email = emailResult as EmailDocument;

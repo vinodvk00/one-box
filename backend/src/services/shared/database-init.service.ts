@@ -1,10 +1,7 @@
-import { initializeRepositories } from '../core/container';
+import { initializeRepositories } from '../../core/container';
 
 /**
  * Initialize all required Elasticsearch indices
- *
- * REFACTORED: Now uses the dependency injection container
- * This ensures all repositories are properly initialized
  */
 export const initializeDatabase = async (): Promise<void> => {
     try {
@@ -22,13 +19,12 @@ export const initializeDatabase = async (): Promise<void> => {
  */
 export const validateDatabaseSetup = async (): Promise<boolean> => {
     try {
-        const { client: getClient } = await import('./elasticsearch.service');
-        const client = getClient();
+        const { esClient } = await import('../../core/container');
 
         const indices = ['emails', 'users', 'oauth_tokens', 'account_configs'];
         const checks = await Promise.all(
             indices.map(async (index: string) => {
-                const exists = await client.indices.exists({ index });
+                const exists = await esClient.indices.exists({ index });
                 return {
                     index,
                     exists
