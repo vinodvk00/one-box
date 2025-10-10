@@ -126,10 +126,27 @@ export class OAuthService {
 
     /**
      * Store OAuth tokens and account configuration
+     *
+     * @param email - User's email address
+     * @param tokens - OAuth tokens from Google
+     * @param userId - Optional user ID (defaults to email-based ID for backward compatibility)
      */
-    async storeUserOAuthData(email: string, tokens: TokenSet): Promise<void> {
+    async storeUserOAuthData(email: string, tokens: TokenSet, userId?: string): Promise<void> {
         const accountId = `oauth_${email}`;
         const now = new Date();
+
+        const configDoc: AccountConfigDocument = {
+            id: accountId,
+            userId: userId || `user_oauth_${email}`, 
+            email,
+            authType: 'oauth',
+            isPrimary: false,
+            isActive: true,
+            createdAt: now,
+            syncStatus: 'idle'
+        };
+
+        await this.accountRepo.store(configDoc);
 
         const tokenDoc: OAuthTokenDocument = {
             id: accountId,
@@ -143,19 +160,6 @@ export class OAuthService {
         };
 
         await this.oauthRepo.storeTokens(tokenDoc);
-
-        const configDoc: AccountConfigDocument = {
-            id: accountId,
-            userId: 'legacy',
-            email,
-            authType: 'oauth',
-            isPrimary: false,
-            isActive: true,
-            createdAt: now,
-            syncStatus: 'idle'
-        };
-
-        await this.accountRepo.store(configDoc);
     }
 
     /**

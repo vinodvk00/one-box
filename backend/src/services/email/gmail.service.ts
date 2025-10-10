@@ -7,6 +7,8 @@ interface CachedToken {
     expiryTime: number;
 }
 
+// TODO: better handling of default values for maxResults, daysBack, etc.
+
 const tokenCache = new Map<string, CachedToken>();
 const TOKEN_CACHE_BUFFER_MS = 5 * 60 * 1000;
 
@@ -187,9 +189,17 @@ export const fetchGmailMessages = async (
 ): Promise<EmailDocument[]> => {
     const startTime = Date.now();
     try {
+        const { accountRepository } = await import('../../core/container');
+        const accountConfig = await accountRepository.getByEmail(email);
+
+        if (!accountConfig) {
+            throw new Error(`No account configuration found for ${email}. Please add the email account first.`);
+        }
+
+        const accountId = accountConfig.id;
         const gmail = await getGmailClient(email);
 
-        console.log(`📧 Fetching Gmail messages for ${email} from last ${daysBack} days...`);
+        console.log(`📧 Fetching Gmail messages for ${email} (account: ${accountId}) from last ${daysBack} days...`);
 
         const listResponse = await gmail.users.messages.list({
             userId: 'me',
@@ -277,7 +287,7 @@ export const fetchGmailMessages = async (
                     continue;
                 }
 
-                const emailDoc = convertGmailMessageToEmailDocument(message, email, messageFormat);
+                const emailDoc = convertGmailMessageToEmailDocument(message, accountId, messageFormat);
 
                 if (processedCount < 3) {
                     console.log(`📧 Email ${messageRef.id} content:`, {
