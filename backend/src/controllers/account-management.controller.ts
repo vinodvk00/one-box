@@ -1,17 +1,7 @@
 import { Request, Response } from 'express';
 import { google } from 'googleapis';
 import { nanoid } from 'nanoid';
-import {
-    storeAccountConfig,
-    getAccountConfigsByUserId,
-    getAccountConfigById,
-    updateAccountConfigById,
-    updateAccountConfigsByUserId,
-    deleteAccountConfigById,
-    storeOAuthTokens,
-    deleteOAuthTokens
-} from '../services/oauth-storage.service';
-import { updateUser, findUserById } from '../services/user.service';
+import { accountRepository, oauthRepository, userService } from '../core/container';
 import { encrypt } from '../services/encryption.service';
 import { ImapFlow } from 'imapflow';
 
@@ -115,9 +105,9 @@ export const handleGmailAccountCallback = async (req: Request, res: Response): P
             return;
         }
 
-        const existingAccounts = await getAccountConfigsByUserId(userId);
+        const existingAccounts = await accountRepository.getByUserId(userId);
         const alreadyConnected = existingAccounts.some(
-            account => account.email === userInfo.data.email
+            (account: any) => account.email === userInfo.data.email
         );
 
         if (alreadyConnected) {
@@ -132,7 +122,7 @@ export const handleGmailAccountCallback = async (req: Request, res: Response): P
         const accountId = `acc_${nanoid(12)}`;
         const isPrimary = existingAccounts.length === 0;
 
-        await storeAccountConfig({
+        await accountRepository.store({
             id: accountId,
             userId,
             email: userInfo.data.email,
@@ -143,7 +133,7 @@ export const handleGmailAccountCallback = async (req: Request, res: Response): P
             createdAt: new Date()
         });
 
-        await storeOAuthTokens({
+        await oauthRepository.storeTokens({
             id: `oauth_${userInfo.data.email}`,
             email: userInfo.data.email,
             accessToken: tokens.access_token!,
@@ -154,7 +144,7 @@ export const handleGmailAccountCallback = async (req: Request, res: Response): P
         });
 
         if (isPrimary) {
-            await updateUser(userId, { primaryEmailAccountId: accountId });
+            await userService.updateUser(userId, { primaryEmailAccountId: accountId });
         }
 
         delete req.session.pendingAccountConnection;
@@ -219,8 +209,8 @@ export const connectImapAccount = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const existingAccounts = await getAccountConfigsByUserId(userId);
-        const alreadyConnected = existingAccounts.some(account => account.email === email);
+        const existingAccounts = await accountRepository.getByUserId(userId);
+        const alreadyConnected = existingAccounts.some((account: any) => account.email === email);
 
         if (alreadyConnected) {
             res.status(400).json({
@@ -235,7 +225,7 @@ export const connectImapAccount = async (req: Request, res: Response): Promise<v
         const accountId = `acc_${nanoid(12)}`;
         const isPrimary = existingAccounts.length === 0;
 
-        await storeAccountConfig({
+        await accountRepository.store({
             id: accountId,
             userId,
             email,
@@ -253,7 +243,7 @@ export const connectImapAccount = async (req: Request, res: Response): Promise<v
         });
 
         if (isPrimary) {
-            await updateUser(userId, { primaryEmailAccountId: accountId });
+            await userService.updateUser(userId, { primaryEmailAccountId: accountId });
         }
 
         res.status(201).json({
@@ -291,10 +281,10 @@ export const listConnectedAccounts = async (req: Request, res: Response): Promis
             return;
         }
 
-        const accounts = await getAccountConfigsByUserId(userId);
+        const accounts = await accountRepository.getByUserId(userId);
 
         res.json({
-            accounts: accounts.map(account => ({
+            accounts: accounts.map((account: any) => ({
                 id: account.id,
                 email: account.email,
                 authType: account.authType,
@@ -331,7 +321,7 @@ export const setPrimaryAccount = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        const account = await getAccountConfigById(accountId);
+        const account = await accountRepository.getById(accountId);
         if (!account || account.userId !== userId) {
             res.status(404).json({
                 error: 'Not Found',
@@ -340,11 +330,11 @@ export const setPrimaryAccount = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        await updateAccountConfigsByUserId(userId, { isPrimary: false });
+        await accountRepository.updateByUserId(userId, { isPrimary: false });
 
-        await updateAccountConfigById(accountId, { isPrimary: true });
+        await accountRepository.updateById(accountId, { isPrimary: true });
 
-        await updateUser(userId, { primaryEmailAccountId: accountId });
+        await userService.updateUser(userId, { primaryEmailAccountId: accountId });
 
         res.json({
             success: true,
@@ -375,7 +365,7 @@ export const toggleAccountStatus = async (req: Request, res: Response): Promise<
             return;
         }
 
-        const account = await getAccountConfigById(accountId);
+        const account = await accountRepository.getById(accountId);
         if (!account || account.userId !== userId) {
             res.status(404).json({
                 error: 'Not Found',
@@ -385,7 +375,7 @@ export const toggleAccountStatus = async (req: Request, res: Response): Promise<
         }
 
         const newStatus = !account.isActive;
-        await updateAccountConfigById(accountId, { isActive: newStatus });
+        await accountRepository.updateById(accountId, { isActive: newStatus });
 
         res.json({
             success: true,
@@ -418,7 +408,7 @@ export const removeAccount = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const account = await getAccountConfigById(accountId);
+        const account = await accountRepository.getById(accountId);
         if (!account || account.userId !== userId) {
             res.status(404).json({
                 error: 'Not Found',
@@ -427,25 +417,25 @@ export const removeAccount = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const userAccounts = await getAccountConfigsByUserId(userId);
+        const userAccounts = await accountRepository.getByUserId(userId);
 
-        // If this is primary and other accounts exist, set another as primary 
+        // If this is primary and other accounts exist, set another as primary
         // todo: change to prompt user to select new primary if multiple exist by verifying password
         if (account.isPrimary && userAccounts.length > 1) {
-            const otherAccount = userAccounts.find(a => a.id !== accountId);
+            const otherAccount = userAccounts.find((a: any) => a.id !== accountId);
             if (otherAccount) {
-                await updateAccountConfigById(otherAccount.id, { isPrimary: true });
-                await updateUser(userId, { primaryEmailAccountId: otherAccount.id });
+                await accountRepository.updateById(otherAccount.id, { isPrimary: true });
+                await userService.updateUser(userId, { primaryEmailAccountId: otherAccount.id });
             }
         } else if (account.isPrimary) {
-            await updateUser(userId, { primaryEmailAccountId: undefined });
+            await userService.updateUser(userId, { primaryEmailAccountId: undefined });
         }
 
         if (account.authType === 'oauth') {
-            await deleteOAuthTokens(account.email);
+            await oauthRepository.deleteTokens(account.email);
         }
 
-        await deleteAccountConfigById(accountId);
+        await accountRepository.deleteById(accountId);
 
         res.json({
             success: true,

@@ -3,16 +3,13 @@ import {
     register,
     login,
     logout,
-    getCurrentUser,
-    changePassword,
-    initiateOAuthLogin,
-    handleOAuthLoginCallback
+    getCurrentUser
 } from '../controllers/user-auth.controller';
+import { initiateGmailOAuth } from '../controllers/auth.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
     validateRegister,
-    validateLogin,
-    validateChangePassword
+    validateLogin
 } from '../middleware/validation.middleware';
 
 const router = Router();
@@ -55,6 +52,23 @@ const router = Router();
  *         description: Registration failed
  */
 router.post('/register', validateRegister, register);
+
+/**
+ * @openapi
+ * /auth/login/google:
+ *   get:
+ *     tags:
+ *       - User Authentication
+ *     summary: Initiate OAuth login with Google
+ *     description: Redirects user to Google OAuth consent screen for app login.
+ *                  After authorization, user will be created/logged in and Gmail account connected.
+ *     responses:
+ *       '302':
+ *         description: Redirect to Google OAuth authorization URL
+ *       '500':
+ *         description: Failed to initiate OAuth flow
+ */
+router.get('/login/google', initiateGmailOAuth);
 
 /**
  * @openapi
@@ -161,34 +175,10 @@ router.get('/me', requireAuth, getCurrentUser);
  *       '500':
  *         description: Failed to change password
  */
-router.patch('/change-password', requireAuth, validateChangePassword, changePassword);
+// TODO: add changePassword route when implemented
+// router.patch('/change-password', requireAuth, validateChangePassword, changePassword);
 
 // todo: forgot-password routes to support resetting password via email link, #goodtohave
-
-/**
- * @openapi
- * /auth/login/google:
- *   get:
- *     tags:
- *       - User Authentication
- *     summary: Initiate OAuth login with Google
- *     description: Start OAuth flow for app login (creates user and connects Gmail)
- *     responses:
- *       '200':
- *         description: OAuth URL generated successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 authUrl:
- *                   type: string
- *       '500':
- *         description: Failed to initiate OAuth login
- */
-router.get('/login/google', initiateOAuthLogin);
 
 /**
  * @openapi

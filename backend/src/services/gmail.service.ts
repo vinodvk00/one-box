@@ -1,5 +1,5 @@
 import { gmail_v1, google } from 'googleapis';
-import { createOAuthClient, getValidAccessToken } from './oauth.service';
+import { oauthService } from '../core/container';
 import { EmailDocument, indexEmail, bulkIndexEmails } from './elasticsearch.service';
 
 interface CachedToken {
@@ -18,7 +18,7 @@ const getCachedAccessToken = async (email: string): Promise<string> => {
         return cached.accessToken;
     }
 
-    const accessToken = await getValidAccessToken(email);
+    const accessToken = await oauthService.getValidAccessToken(email);
 
     const expiryTime = now + 55 * 60 * 1000;
 
@@ -47,7 +47,7 @@ export interface GmailEmailMessage {
 const getGmailClient = async (email: string, retryCount = 0): Promise<gmail_v1.Gmail> => {
     try {
         const accessToken = await getCachedAccessToken(email);
-        const oAuthClient = createOAuthClient();
+        const oAuthClient = oauthService.createOAuthClient();
         oAuthClient.setCredentials({ access_token: accessToken });
 
         return google.gmail({ version: 'v1', auth: oAuthClient });
@@ -61,7 +61,6 @@ const getGmailClient = async (email: string, retryCount = 0): Promise<gmail_v1.G
             console.log(`🔄 Attempting to force refresh tokens for ${email}...`);
             try {
                 // Get fresh tokens and retry
-                const { forceReconnectAccount } = await import('./oauth.service');
                 throw new Error(`Token refresh failed for ${email}. Please reconnect your account.`);
             } catch (refreshError) {
                 throw new Error(`Authentication failed for ${email}. Please reconnect your Gmail account.`);
@@ -351,12 +350,12 @@ export const fetchGmailMessages = async (
 };
 
 export const syncAllOAuthAccounts = async (daysBack: number = 30): Promise<void> => {
-    const { getActiveAccountConfigs } = await import('./oauth-storage.service');
+    const { accountRepository } = await import('../core/container');
     const syncStartTime = Date.now();
 
     try {
-        const accounts = await getActiveAccountConfigs();
-        const oauthAccounts = accounts.filter(account => account.authType === 'oauth');
+        const accounts = await accountRepository.getActive();
+        const oauthAccounts = accounts.filter((account: any) => account.authType === 'oauth');
 
         console.log(`🔄 Starting Gmail sync for ${oauthAccounts.length} OAuth accounts...`);
 

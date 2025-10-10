@@ -1,28 +1,23 @@
 import { Request, Response } from 'express';
-import {
-    createOAuthClient,
-    generateAuthUrl,
-    exchangeCodeForTokens,
-    getUserEmailFromToken,
-    storeUserOAuthData,
-    disconnectOAuthAccount,
-    hasValidOAuthConnection,
-    validateTokens,
-    forceReconnectAccount,
-    cleanupInvalidTokens
-} from '../services/oauth.service';
-import {
-    getAllAccountConfigs,
-    getAccountConfig,
-    updateAccountConfig
-} from '../services/oauth-storage.service';
+import { oauthService, accountRepository, oauthRepository } from '../core/container';
 
 export const initiateGmailOAuth = async (req: Request, res: Response) => {
     try {
-        const client = createOAuthClient();
-        const authUrl = generateAuthUrl(client);
+        const client = oauthService.createOAuthClient();
+        const authUrl = oauthService.generateAuthUrl(client);
 
-        res.redirect(authUrl);
+        const acceptHeader = req.headers['accept'] || '';
+        const isAjaxRequest = req.headers['x-requested-with'] === 'XMLHttpRequest' ||
+            (acceptHeader.includes('application/json') && !acceptHeader.includes('text/html'));
+
+        if (isAjaxRequest) {
+            res.json({
+                success: true,
+                authUrl
+            });
+        } else {
+            res.redirect(authUrl);
+        }
     } catch (error) {
         console.error('Failed to initiate OAuth flow:', error);
         res.status(500).json({
@@ -52,19 +47,16 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
             return res.redirect(errorRedirectUrl);
         }
 
-        const client = createOAuthClient();
-        const tokens = await exchangeCodeForTokens(client, code);
+        const client = oauthService.createOAuthClient();
+        const tokens = await oauthService.exchangeCodeForTokens(client, code);
 
-        const email = await getUserEmailFromToken(tokens.accessToken);
+        const email = await oauthService.getUserEmailFromToken(tokens.accessToken);
 
         const isLoginFlow = !req.session?.userId;
 
         if (isLoginFlow) {
             const { google } = await import('googleapis');
-            const { findOrCreateOAuthUser } = await import('../services/auth.service');
-            const { updateLastLogin, updateUser } = await import('../services/user.service');
-            const { getAccountConfigsByUserId, storeAccountConfig } = await import('../services/oauth-storage.service');
-            const { storeOAuthTokens } = await import('../services/oauth-storage.service');
+            const { authService, userService } = await import('../core/container');
             const { nanoid } = await import('nanoid');
 
             const oauth2Client = client;
@@ -82,22 +74,22 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
                 return;
             }
 
-            const user = await findOrCreateOAuthUser({
+            const user = await authService.findOrCreateOAuthUser({
                 email: userInfo.data.email,
                 name: userInfo.data.name,
                 oauthProvider: 'google'
             });
 
-            const existingAccounts = await getAccountConfigsByUserId(user.id);
+            const existingAccounts = await accountRepository.getByUserId(user.id);
             const gmailAccountExists = existingAccounts.some(
-                account => account.email === userInfo.data.email && account.authType === 'oauth'
+                (account: any) => account.email === userInfo.data.email && account.authType === 'oauth'
             );
 
             if (!gmailAccountExists) {
                 const accountId = `acc_${nanoid(12)}`;
                 const isPrimary = existingAccounts.length === 0;
 
-                await storeAccountConfig({
+                await accountRepository.store({
                     id: accountId,
                     userId: user.id,
                     email: userInfo.data.email,
@@ -108,7 +100,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
                     createdAt: new Date()
                 });
 
-                await storeOAuthTokens({
+                await oauthRepository.storeTokens({
                     id: `oauth_${userInfo.data.email}`,
                     email: userInfo.data.email,
                     accessToken: tokens.accessToken,
@@ -119,11 +111,11 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
                 });
 
                 if (isPrimary) {
-                    await updateUser(user.id, { primaryEmailAccountId: accountId });
+                    await userService.updateUser(user.id, { primaryEmailAccountId: accountId });
                 }
             }
 
-            await updateLastLogin(user.id);
+            await userService.updateLastLogin(user.id);
 
             req.session.userId = user.id;
             req.session.email = user.email;
@@ -138,12 +130,12 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
                 res.redirect(`${frontendUrl}/auth/callback?success=true`);
             });
         } else {
-            const existingConnection = await hasValidOAuthConnection(email);
+            const existingConnection = await oauthService.hasValidOAuthConnection(email);
             if (existingConnection) {
-                await disconnectOAuthAccount(email);
+                await oauthService.disconnectOAuthAccount(email);
             }
 
-            await storeUserOAuthData(email, tokens);
+            await oauthService.storeUserOAuthData(email, tokens);
 
             const redirectUrl = `${frontendUrl}/settings?oauth=success&email=${encodeURIComponent(email)}`;
             res.redirect(redirectUrl);
@@ -165,13 +157,12 @@ export const getConnectedAccounts = async (req: Request, res: Response) => {
 
         let accounts;
         if (userId) {
-            const { getAccountConfigsByUserId } = await import('../services/oauth-storage.service');
-            accounts = await getAccountConfigsByUserId(userId);
+            accounts = await accountRepository.getByUserId(userId);
         } else {
-            accounts = await getAllAccountConfigs();
+            accounts = await accountRepository.getAll();
         }
 
-        const accountList = accounts.map(account => ({
+        const accountList = accounts.map((account: any) => ({
             id: account.id,
             email: account.email,
             authType: account.authType,
@@ -205,7 +196,7 @@ export const getAccountDetails = async (req: Request, res: Response) => {
             });
         }
 
-        const account = await getAccountConfig(email);
+        const account = await accountRepository.getByEmail(email);
 
         if (!account) {
             return res.status(404).json({
@@ -215,7 +206,7 @@ export const getAccountDetails = async (req: Request, res: Response) => {
 
         let tokenValid = true;
         if (account.authType === 'oauth') {
-            tokenValid = await validateTokens(email);
+            tokenValid = await oauthService.validateTokens(email);
         }
 
         res.json({
@@ -256,9 +247,8 @@ export const disconnectAccount = async (req: Request, res: Response) => {
             });
         }
 
-        const { getAccountConfigsByUserId, deleteAccountConfigById } = await import('../services/oauth-storage.service');
-        const userAccounts = await getAccountConfigsByUserId(userId);
-        const accountsToDelete = userAccounts.filter(acc => acc.email === email);
+        const userAccounts = await accountRepository.getByUserId(userId);
+        const accountsToDelete = userAccounts.filter((acc: any) => acc.email === email);
 
         if (accountsToDelete.length === 0) {
             return res.status(404).json({
@@ -275,10 +265,10 @@ export const disconnectAccount = async (req: Request, res: Response) => {
                 });
             }
 
-            await deleteAccountConfigById(account.id);
+            await accountRepository.deleteById(account.id);
         }
 
-        await disconnectOAuthAccount(email);
+        await oauthService.disconnectOAuthAccount(email);
 
         res.json({
             success: true,
@@ -305,7 +295,7 @@ export const toggleAccountStatus = async (req: Request, res: Response) => {
             });
         }
 
-        const account = await getAccountConfig(email);
+        const account = await accountRepository.getByEmail(email);
 
         if (!account) {
             return res.status(404).json({
@@ -315,7 +305,7 @@ export const toggleAccountStatus = async (req: Request, res: Response) => {
 
         const newStatus = !account.isActive;
 
-        await updateAccountConfig(email, {
+        await accountRepository.updateByEmail(email, {
             isActive: newStatus,
             syncStatus: newStatus ? 'idle' : 'disconnected'
         });
@@ -346,7 +336,7 @@ export const forceReconnectOAuth = async (req: Request, res: Response) => {
             });
         }
 
-        const account = await getAccountConfig(email);
+        const account = await accountRepository.getByEmail(email);
 
         if (!account) {
             return res.status(404).json({
@@ -361,7 +351,7 @@ export const forceReconnectOAuth = async (req: Request, res: Response) => {
             });
         }
 
-        const authUrl = await forceReconnectAccount(email);
+        const authUrl = await oauthService.forceReconnectAccount(email);
 
         res.json({
             success: true,
@@ -379,7 +369,7 @@ export const forceReconnectOAuth = async (req: Request, res: Response) => {
 
 export const cleanupInvalidOAuthTokens = async (req: Request, res: Response) => {
     try {
-        await cleanupInvalidTokens();
+        await oauthService.cleanupInvalidTokens();
 
         res.json({
             success: true,

@@ -35,9 +35,9 @@ export const emailRepository: IEmailRepository = new ElasticsearchEmailRepositor
  * Services contain business logic and use repositories for data access
  */
 
-import { UserService } from '../services/user.service.refactored';
-import { AuthService } from '../services/auth.service.refactored';
-import { OAuthService } from '../services/oauth.service.refactored';
+import { UserService } from '../services/user.service';
+import { AuthService } from '../services/auth.service';
+import { OAuthService } from '../services/oauth.service';
 import { EmailService } from '../services/email.service';
 
 // Create service instances (inject repositories)

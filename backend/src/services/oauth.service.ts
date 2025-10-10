@@ -1,17 +1,8 @@
 import { OAuth2Client } from 'google-auth-library';
 import { google } from 'googleapis';
 import { GoogleOAuthConfig, TokenSet, OAuthTokenDocument, AccountConfigDocument } from '../types/auth.types';
-import {
-    storeOAuthTokens,
-    getOAuthTokens,
-    updateOAuthTokens,
-    deleteOAuthTokens,
-    storeAccountConfig,
-    getAccountConfig,
-    updateAccountConfig,
-    deleteAccountConfig,
-    getAllAccountConfigs
-} from './oauth-storage.service';
+import { IOAuthRepository } from '../repositories/interfaces/oauth.interface';
+import { IAccountRepository } from '../repositories/interfaces/account.interface';
 
 const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -19,295 +10,336 @@ const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile'
 ];
 
-const getOAuthConfig = (): GoogleOAuthConfig => {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+/**
+ * OAuth Service (Refactored with Dependency Injection)
+ */
+export class OAuthService {
+    constructor(
+        private oauthRepo: IOAuthRepository,
+        private accountRepo: IAccountRepository
+    ) {}
 
-    if (!clientId || !clientSecret || !redirectUri) {
-        throw new Error('Missing required OAuth environment variables: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI');
+    private getOAuthConfig(): GoogleOAuthConfig {
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+        if (!clientId || !clientSecret || !redirectUri) {
+            throw new Error('Missing required OAuth environment variables');
+        }
+
+        return { clientId, clientSecret, redirectUri };
     }
 
-    return {
-        clientId,
-        clientSecret,
-        redirectUri
-    };
-};
-
-export const createOAuthClient = (): OAuth2Client => {
-    const config = getOAuthConfig();
-    return new google.auth.OAuth2(
-        config.clientId,
-        config.clientSecret,
-        config.redirectUri
-    );
-};
-
-export const generateAuthUrl = (client: OAuth2Client, forceReauth: boolean = false): string => {
-    return client.generateAuthUrl({
-        access_type: 'offline',
-        scope: GMAIL_SCOPES,
-        prompt: forceReauth ? 'consent' : 'select_account',
-        include_granted_scopes: false
-    });
-};
-
-export const exchangeCodeForTokens = async (
-    client: OAuth2Client,
-    code: string
-): Promise<TokenSet> => {
-    const { tokens } = await client.getToken(code);
-
-    if (!tokens.access_token) {
-        throw new Error('No access token received from Google');
+    /**
+     * Create OAuth2 client
+     */
+    createOAuthClient(): OAuth2Client {
+        const config = this.getOAuthConfig();
+        return new google.auth.OAuth2(
+            config.clientId,
+            config.clientSecret,
+            config.redirectUri
+        );
     }
 
-    return {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || undefined,
-        expiryDate: tokens.expiry_date || undefined,
-        scope: tokens.scope?.split(' ') || GMAIL_SCOPES
-    };
-};
+    /**
+     * Generate OAuth authorization URL
+     */
+    generateAuthUrl(client: OAuth2Client, forceReauth: boolean = false): string {
+        return client.generateAuthUrl({
+            access_type: 'offline',
+            scope: GMAIL_SCOPES,
+            prompt: forceReauth ? 'consent' : 'select_account',
+            include_granted_scopes: false
+        });
+    }
 
-export const refreshAccessToken = async (refreshToken: string): Promise<TokenSet> => {
-    const client = createOAuthClient();
-    client.setCredentials({
-        refresh_token: refreshToken
-    });
+    /**
+     * Exchange authorization code for tokens
+     */
+    async exchangeCodeForTokens(client: OAuth2Client, code: string): Promise<TokenSet> {
+        const { tokens } = await client.getToken(code);
 
-    try {
-        const { credentials } = await client.refreshAccessToken();
-
-        if (!credentials.access_token) {
-            throw new Error('Failed to refresh access token');
+        if (!tokens.access_token) {
+            throw new Error('No access token received from Google');
         }
 
         return {
-            accessToken: credentials.access_token,
-            refreshToken: credentials.refresh_token || refreshToken,
-            expiryDate: credentials.expiry_date || undefined,
-            scope: credentials.scope?.split(' ') || GMAIL_SCOPES
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token || undefined,
+            expiryDate: tokens.expiry_date || undefined,
+            scope: tokens.scope?.split(' ') || GMAIL_SCOPES
         };
-    } catch (error) {
-        throw new Error(`Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-};
 
-export const getUserEmailFromToken = async (accessToken: string): Promise<string> => {
-    try {
-        const client = createOAuthClient();
+    /**
+     * Refresh access token using refresh token
+     */
+    async refreshAccessToken(refreshToken: string): Promise<TokenSet> {
+        const client = this.createOAuthClient();
         client.setCredentials({
-            access_token: accessToken,
-            token_type: 'Bearer'
+            refresh_token: refreshToken
         });
 
-        const oauth2 = google.oauth2({ version: 'v2', auth: client });
-        const { data } = await oauth2.userinfo.get();
-
-        if (!data.email) {
-            throw new Error('No email found in user info response');
-        }
-
-        return data.email;
-    } catch (error) {
-        throw new Error(`Failed to retrieve user email: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-};
-
-export const storeUserOAuthData = async (
-    email: string,
-    tokens: TokenSet
-): Promise<void> => {
-    const accountId = `oauth_${email}`;
-    const now = new Date();
-
-    const tokenDoc: OAuthTokenDocument = {
-        id: accountId,
-        email,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        tokenExpiry: tokens.expiryDate ? new Date(tokens.expiryDate) : undefined,
-        scope: tokens.scope || GMAIL_SCOPES,
-        createdAt: now,
-        lastUsed: now
-    };
-
-    await storeOAuthTokens(tokenDoc);
-
-    const configDoc: AccountConfigDocument = {
-        id: accountId,
-        userId: 'legacy',
-        email,
-        authType: 'oauth',
-        isPrimary: false,
-        isActive: true,
-        createdAt: now,
-        syncStatus: 'idle'
-    };
-
-    await storeAccountConfig(configDoc);
-};
-
-export const getValidAccessToken = async (email: string): Promise<string> => {
-    const tokens = await getOAuthTokens(email);
-
-    if (!tokens) {
-        throw new Error(`No OAuth tokens found for ${email}`);
-    }
-
-    const now = new Date();
-    const expiryTime = tokens.tokenExpiry ? new Date(tokens.tokenExpiry) : new Date(now.getTime() + 60 * 60 * 1000);
-    const bufferTime = new Date(now.getTime() + 5 * 60 * 1000);
-
-    if (expiryTime <= bufferTime) {
-        if (!tokens.refreshToken) {
-            throw new Error(`No refresh token available for ${email}`);
-        }
-
         try {
-            const newTokens = await refreshAccessToken(tokens.refreshToken);
+            const { credentials } = await client.refreshAccessToken();
 
-            await updateOAuthTokens(email, {
-                accessToken: newTokens.accessToken,
-                refreshToken: newTokens.refreshToken,
-                tokenExpiry: newTokens.expiryDate ? new Date(newTokens.expiryDate) : undefined
+            if (!credentials.access_token) {
+                throw new Error('Failed to refresh access token');
+            }
+
+            return {
+                accessToken: credentials.access_token,
+                refreshToken: credentials.refresh_token || refreshToken,
+                expiryDate: credentials.expiry_date || undefined,
+                scope: credentials.scope?.split(' ') || GMAIL_SCOPES
+            };
+        } catch (error) {
+            throw new Error(`Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Get user email from access token
+     */
+    async getUserEmailFromToken(accessToken: string): Promise<string> {
+        try {
+            const client = this.createOAuthClient();
+            client.setCredentials({
+                access_token: accessToken,
+                token_type: 'Bearer'
             });
 
-            return newTokens.accessToken;
+            const oauth2 = google.oauth2({ version: 'v2', auth: client });
+            const { data } = await oauth2.userinfo.get();
+
+            if (!data.email) {
+                throw new Error('No email found in user info response');
+            }
+
+            return data.email;
         } catch (error) {
-            throw new Error(`Failed to refresh token for ${email}: ${error}`);
+            throw new Error(`Failed to retrieve user email: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
 
-    return tokens.accessToken;
-};
+    /**
+     * Store OAuth tokens and account configuration
+     */
+    async storeUserOAuthData(email: string, tokens: TokenSet): Promise<void> {
+        const accountId = `oauth_${email}`;
+        const now = new Date();
 
-export const disconnectOAuthAccount = async (email: string): Promise<void> => {
-    try {
-        const { clearTokenCache } = await import('./gmail.service');
-        clearTokenCache(email);
+        const tokenDoc: OAuthTokenDocument = {
+            id: accountId,
+            email,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            tokenExpiry: tokens.expiryDate ? new Date(tokens.expiryDate) : undefined,
+            scope: tokens.scope || GMAIL_SCOPES,
+            createdAt: now,
+            lastUsed: now
+        };
 
-        await deleteOAuthTokens(email);
-        await deleteAccountConfig(email);
-    } catch (error) {
-        throw error;
+        await this.oauthRepo.storeTokens(tokenDoc);
+
+        const configDoc: AccountConfigDocument = {
+            id: accountId,
+            userId: 'legacy',
+            email,
+            authType: 'oauth',
+            isPrimary: false,
+            isActive: true,
+            createdAt: now,
+            syncStatus: 'idle'
+        };
+
+        await this.accountRepo.store(configDoc);
     }
-};
 
-export const hasValidOAuthConnection = async (email: string): Promise<boolean> => {
-    try {
-        const tokens = await getOAuthTokens(email);
-        const config = await getAccountConfig(email);
+    /**
+     * Get valid access token (refresh if needed)
+     */
+    async getValidAccessToken(email: string): Promise<string> {
+        const tokens = await this.oauthRepo.getTokens(email);
 
-        if (!tokens || !config) {
-            return false;
-        }
-
-        if (!config.isActive) {
-            return false;
-        }
-
-        return true;
-    } catch (error) {
-        return false;
-    }
-};
-
-export const validateTokens = async (email: string): Promise<boolean> => {
-    try {
-        const tokens = await getOAuthTokens(email);
         if (!tokens) {
-            return false;
+            throw new Error(`No OAuth tokens found for ${email}`);
         }
 
         const now = new Date();
         const expiryTime = tokens.tokenExpiry ? new Date(tokens.tokenExpiry) : new Date(now.getTime() + 60 * 60 * 1000);
+        const bufferTime = new Date(now.getTime() + 5 * 60 * 1000);
 
-        if (expiryTime <= now) {
+        if (expiryTime <= bufferTime) {
             if (!tokens.refreshToken) {
-                return false;
+                throw new Error(`No refresh token available for ${email}`);
             }
 
             try {
-                await refreshAccessToken(tokens.refreshToken);
-            } catch (refreshError) {
-                return false;
+                const newTokens = await this.refreshAccessToken(tokens.refreshToken);
+
+                await this.oauthRepo.updateTokens(email, {
+                    accessToken: newTokens.accessToken,
+                    refreshToken: newTokens.refreshToken,
+                    tokenExpiry: newTokens.expiryDate ? new Date(newTokens.expiryDate) : undefined
+                });
+
+                return newTokens.accessToken;
+            } catch (error) {
+                throw new Error(`Failed to refresh token for ${email}: ${error}`);
             }
         }
 
-        const accessToken = await getValidAccessToken(email);
-        const client = createOAuthClient();
-        client.setCredentials({ access_token: accessToken });
+        return tokens.accessToken;
+    }
 
-        const oauth2 = google.oauth2({ version: 'v2', auth: client });
-        const response = await oauth2.userinfo.get();
+    /**
+     * Disconnect OAuth account
+     */
+    async disconnectOAuthAccount(email: string): Promise<void> {
+        try {
+            const { clearTokenCache } = await import('./gmail.service');
+            clearTokenCache(email);
 
-        if (response.data.email !== email) {
+            await this.oauthRepo.deleteTokens(email);
+            await this.accountRepo.deleteByEmail(email);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Check if user has valid OAuth connection
+     */
+    async hasValidOAuthConnection(email: string): Promise<boolean> {
+        try {
+            const tokens = await this.oauthRepo.getTokens(email);
+            const config = await this.accountRepo.getByEmail(email);
+
+            if (!tokens || !config) {
+                return false;
+            }
+
+            if (!config.isActive) {
+                return false;
+            }
+
+            return true;
+        } catch (error) {
             return false;
         }
-
-        return true;
-    } catch (error: any) {
-        if (error.status === 401 || error.code === 401) {
-            try {
-                await disconnectOAuthAccount(email);
-            } catch (cleanupError) {
-            }
-        }
-
-        return false;
     }
-};
 
-export const checkTokenScopes = async (email: string): Promise<{ hasFullAccess: boolean; scopes: string[] }> => {
-    try {
-        const tokens = await getOAuthTokens(email);
-        if (!tokens) {
+    /**
+     * Validate OAuth tokens
+     */
+    async validateTokens(email: string): Promise<boolean> {
+        try {
+            const tokens = await this.oauthRepo.getTokens(email);
+            if (!tokens) {
+                return false;
+            }
+
+            const now = new Date();
+            const expiryTime = tokens.tokenExpiry ? new Date(tokens.tokenExpiry) : new Date(now.getTime() + 60 * 60 * 1000);
+
+            if (expiryTime <= now) {
+                if (!tokens.refreshToken) {
+                    return false;
+                }
+
+                try {
+                    await this.refreshAccessToken(tokens.refreshToken);
+                } catch (refreshError) {
+                    return false;
+                }
+            }
+
+            const accessToken = await this.getValidAccessToken(email);
+            const client = this.createOAuthClient();
+            client.setCredentials({ access_token: accessToken });
+
+            const oauth2 = google.oauth2({ version: 'v2', auth: client });
+            const response = await oauth2.userinfo.get();
+
+            if (response.data.email !== email) {
+                return false;
+            }
+
+            return true;
+        } catch (error: any) {
+            if (error.status === 401 || error.code === 401) {
+                try {
+                    await this.disconnectOAuthAccount(email);
+                } catch (cleanupError) {
+                    // Ignore cleanup errors
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * Check token scopes
+     */
+    async checkTokenScopes(email: string): Promise<{ hasFullAccess: boolean; scopes: string[] }> {
+        try {
+            const tokens = await this.oauthRepo.getTokens(email);
+            if (!tokens) {
+                return { hasFullAccess: false, scopes: [] };
+            }
+
+            const tokenScopes = tokens.scope || [];
+            const hasFullAccess = tokenScopes.includes('https://www.googleapis.com/auth/gmail.readonly');
+
+            return {
+                hasFullAccess,
+                scopes: tokenScopes
+            };
+        } catch (error) {
             return { hasFullAccess: false, scopes: [] };
         }
-
-        const tokenScopes = tokens.scope || [];
-        const hasFullAccess = tokenScopes.includes('https://www.googleapis.com/auth/gmail.readonly');
-
-        return {
-            hasFullAccess,
-            scopes: tokenScopes
-        };
-    } catch (error) {
-        return { hasFullAccess: false, scopes: [] };
     }
-};
 
-export const forceReconnectAccount = async (email: string): Promise<string> => {
-    try {
-        await disconnectOAuthAccount(email);
+    /**
+     * Force reconnect account
+     */
+    async forceReconnectAccount(email: string): Promise<string> {
+        try {
+            await this.disconnectOAuthAccount(email);
 
-        const client = createOAuthClient();
-        const authUrl = generateAuthUrl(client, true);
+            const client = this.createOAuthClient();
+            const authUrl = this.generateAuthUrl(client, true);
 
-        return authUrl;
-    } catch (error) {
-        throw error;
-    }
-};
-
-export const cleanupInvalidTokens = async (): Promise<void> => {
-    try {
-        const accounts = await getAllAccountConfigs();
-        const oauthAccounts = accounts.filter(account => account.authType === 'oauth');
-
-        for (const account of oauthAccounts) {
-            try {
-                const isValid = await validateTokens(account.email);
-                if (!isValid) {
-                    await disconnectOAuthAccount(account.email);
-                }
-            } catch (error) {
-            }
+            return authUrl;
+        } catch (error) {
+            throw error;
         }
-    } catch (error) {
-        throw error;
     }
-};
+
+    /**
+     * Cleanup invalid tokens
+     */
+    async cleanupInvalidTokens(): Promise<void> {
+        try {
+            const accounts = await this.accountRepo.getAll();
+            const oauthAccounts = accounts.filter(account => account.authType === 'oauth');
+
+            for (const account of oauthAccounts) {
+                try {
+                    const isValid = await this.validateTokens(account.email);
+                    if (!isValid) {
+                        await this.disconnectOAuthAccount(account.email);
+                    }
+                } catch (error) {
+                    // Continue with next account
+                }
+            }
+        } catch (error) {
+            throw error;
+        }
+    }
+}

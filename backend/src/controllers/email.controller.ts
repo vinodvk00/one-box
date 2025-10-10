@@ -1,14 +1,5 @@
 import { Request, Response } from 'express';
-import {
-    searchEmails as searchEmailsService,
-    getEmailById as getEmailByIdService,
-    getCategoryStats as getCategoryStatsService,
-    getUncategorizedEmails as getUncategorizedEmailsService,
-    categorizeEmailById,
-    deleteEmailsByAccount,
-    getEmailCountByAccount,
-    getAccountStats
-} from '../services/elasticsearch.service';
+import { emailService, oauthService } from '../core/container';
 import {
     startBatchCategorization as startBatchCategorizationService,
     isBatchCategorizationRunning
@@ -17,11 +8,10 @@ import {
     fetchGmailMessages,
     syncAllOAuthAccounts
 } from '../services/gmail.service';
-import { checkTokenScopes } from '../services/oauth.service';
 
 // TODO: options for number of emails, days back, force reindex
 
-/*
+/**
  * Search and filter emails
  */
 export const searchEmails = async (req: Request, res: Response) => {
@@ -31,7 +21,7 @@ export const searchEmails = async (req: Request, res: Response) => {
         const pageNum = parseInt(page as string) || 1;
         const limitNum = parseInt(limit as string) || 50;
 
-        const result = await searchEmailsService(
+        const result = await emailService.searchEmails(
             q as string,
             {
                 account: account as string,
@@ -50,7 +40,7 @@ export const searchEmails = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  * Get all emails with optional filters
  */
 export const getAllEmails = async (req: Request, res: Response) => {
@@ -61,7 +51,7 @@ export const getAllEmails = async (req: Request, res: Response) => {
         const pageNum = parseInt(page as string) || 1;
         const limitNum = parseInt(limit as string) || 50;
 
-        const result = await searchEmailsService('', {
+        const result = await emailService.searchEmails('', {
             account: account as string,
             folder: folder as string,
             category: category as string
@@ -76,12 +66,12 @@ export const getAllEmails = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  *Get a single email by ID
  */
 export const getEmailById = async (req: Request, res: Response) => {
     try {
-        const email = await getEmailByIdService(req.params.id);
+        const email = await emailService.getEmailById(req.params.id);
         res.json(email);
     } catch (error) {
         console.error(`Email not found for id: ${req.params.id}`, error);
@@ -89,12 +79,12 @@ export const getEmailById = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  * Get uncategorized emails
  */
 export const getUncategorizedEmails = async (req: Request, res: Response) => {
     try {
-        const emails = await getUncategorizedEmailsService();
+        const emails = await emailService.getUncategorizedEmails();
         res.json(emails);
     } catch (error) {
         console.error('Failed to fetch uncategorized emails:', error);
@@ -102,12 +92,12 @@ export const getUncategorizedEmails = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  * Categorize a specific email
  */
 export const categorizeEmail = async (req: Request, res: Response) => {
     try {
-        const result = await categorizeEmailById(req.params.id);
+        const result = await emailService.categorizeEmailById(req.params.id);
         if (!result) {
             return res.status(500).json({ error: 'Categorization failed' });
         }
@@ -118,12 +108,12 @@ export const categorizeEmail = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  * Get email category statistics
  */
 export const getCategoryStats = async (req: Request, res: Response) => {
     try {
-        const stats = await getCategoryStatsService();
+        const stats = await emailService.getCategoryStats();
         res.json(stats);
     } catch (error) {
         console.error('Failed to fetch category stats:', error);
@@ -131,7 +121,7 @@ export const getCategoryStats = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  * Start batch categorization
  */
 export const startBatchCategorization = async (req: Request, res: Response) => {
@@ -156,13 +146,13 @@ export const startBatchCategorization = async (req: Request, res: Response) => {
     }
 };
 
-/*
+/**
  * Get batch categorization status
  */
 export const getBatchCategorizationStatus = async (req: Request, res: Response) => {
     try {
         const isRunning = isBatchCategorizationRunning();
-        const uncategorizedEmails = await getUncategorizedEmailsService();
+        const uncategorizedEmails = await emailService.getUncategorizedEmails();
 
         res.json({
             isRunning,
@@ -174,8 +164,8 @@ export const getBatchCategorizationStatus = async (req: Request, res: Response) 
     }
 };
 
-/* 
-    * Sync emails for OAuth accounts
+/**
+* Sync emails for OAuth accounts
 */
 
 export const syncOAuthEmails = async (req: Request, res: Response) => {
@@ -185,9 +175,7 @@ export const syncOAuthEmails = async (req: Request, res: Response) => {
         console.log(`🔄 Starting OAuth email sync${email ? ` for ${email}` : ' for all accounts'}${forceReindex ? ' (force re-index)' : ''}...`);
 
         if (email) {
-            const { hasValidOAuthConnection } = await import('../services/oauth.service');
-
-            const isValidConnection = await hasValidOAuthConnection(email);
+            const isValidConnection = await oauthService.hasValidOAuthConnection(email);
             if (!isValidConnection) {
                 return res.status(400).json({
                     success: false,
@@ -196,7 +184,7 @@ export const syncOAuthEmails = async (req: Request, res: Response) => {
                 });
             }
 
-            const scopeCheck = await checkTokenScopes(email);
+            const scopeCheck = await oauthService.checkTokenScopes(email);
 
             const emails = await fetchGmailMessages(email, daysBack, 1000, forceReindex);
             res.json({
@@ -243,7 +231,7 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
 
         switch (action) {
             case 'delete':
-                const deletedCount = await deleteEmailsByAccount(email);
+                const deletedCount = await emailService.deleteEmailsByAccount(email);
                 res.json({
                     success: true,
                     message: `Deleted ${deletedCount} emails for ${email}`,
@@ -252,7 +240,7 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
                 break;
 
             case 'count':
-                const emailCount = await getEmailCountByAccount(email);
+                const emailCount = await emailService.getEmailCountByAccount(email);
                 res.json({
                     success: true,
                     message: `Found ${emailCount} emails for ${email}`,
@@ -261,7 +249,7 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
                 break;
 
             case 'reindex':
-                const deletedForReindex = await deleteEmailsByAccount(email);
+                const deletedForReindex = await emailService.deleteEmailsByAccount(email);
                 console.log(`🗑️ Deleted ${deletedForReindex} existing emails for ${email}`);
 
                 const reindexedEmails = await fetchGmailMessages(email, daysBack, 100, true);
@@ -291,7 +279,7 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
 
 export const getIndexStats = async (req: Request, res: Response) => {
     try {
-        const stats = await getAccountStats();
+        const stats = await emailService.getAccountStats();
         res.json(stats);
     } catch (error) {
         console.error('Failed to get index stats:', error);
