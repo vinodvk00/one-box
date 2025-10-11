@@ -14,6 +14,10 @@ import { initializeDatabase } from './services/shared/database-init.service';
 import { createSessionMiddleware } from './middleware/session.middleware';
 import statusMonitor from 'express-status-monitor';
 import morgan from 'morgan';
+import { createBullBoard } from '@bull-board/api';
+import { BullAdapter } from '@bull-board/api/bullAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+import { emailSyncQueue } from './core/container';
 
 dotenv.config();
 
@@ -56,6 +60,16 @@ async function initialize() {
     } catch (error) {
         throw error;
     }
+
+    const serverAdapter = new ExpressAdapter();
+    serverAdapter.setBasePath('/admin/queues');
+
+    createBullBoard({
+        queues: [new BullAdapter(emailSyncQueue.getQueue())],
+        serverAdapter: serverAdapter,
+    });
+
+    app.use('/admin/queues', serverAdapter.getRouter());
 
     app.use('/api', emailRoutes);
     app.use('/auth', userAuthRoutes);

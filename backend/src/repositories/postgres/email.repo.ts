@@ -344,23 +344,44 @@ export class PostgresEmailRepository implements IEmailRepository {
     }
 
     /**
-     * Get email count by account
+     * Get email count by account (accepts account ID or email address)
      */
     async getCountByAccount(account: string): Promise<number> {
+        // First, try to find the account by email address
+        const accountLookup = await this.pool.query(
+            `SELECT id FROM email_accounts WHERE email = $1`,
+            [account]
+        );
+
+        let accountId = account;
+        if (accountLookup.rows.length > 0) {
+            accountId = accountLookup.rows[0].id;
+        }
+
         const result = await this.pool.query(
             `SELECT COUNT(*) FROM emails WHERE account_id = $1`,
-            [account]
+            [accountId]
         );
         return parseInt(result.rows[0].count);
     }
 
     /**
-     * Delete emails by account
+     * Delete emails by account (accepts account ID or email address)
      */
     async deleteByAccount(account: string): Promise<number> {
+        const accountLookup = await this.pool.query(
+            `SELECT id FROM email_accounts WHERE email = $1`,
+            [account]
+        );
+
+        let accountId = account;
+        if (accountLookup.rows.length > 0) {
+            accountId = accountLookup.rows[0].id;
+        }
+
         const result = await this.pool.query(
             `DELETE FROM emails WHERE account_id = $1`,
-            [account]
+            [accountId]
         );
         return result.rowCount || 0;
     }

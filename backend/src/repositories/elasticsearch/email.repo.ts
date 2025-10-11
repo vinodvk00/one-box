@@ -13,6 +13,22 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
     constructor(private esClient: Client) {}
 
     /**
+     * Delete emails index
+     */
+    async deleteIndex(): Promise<void> {
+        try {
+            const exists = await this.esClient.indices.exists({ index: this.INDEX });
+            if (exists) {
+                await this.esClient.indices.delete({ index: this.INDEX });
+                console.log(`✅ Deleted Elasticsearch index: ${this.INDEX}`);
+            }
+        } catch (error: any) {
+            console.error(`❌ Failed to delete index: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
      * Create emails index
      */
     async createIndex(): Promise<void> {
