@@ -9,8 +9,7 @@ const esClient = new Client({
     requestTimeout: 60000,
     pingTimeout: 30000,
     maxRetries: 5,
-    sniffOnStart: false,
-    discovery for Docker
+    sniffOnStart: false, 
     resurrectStrategy: 'ping'
 });
 
