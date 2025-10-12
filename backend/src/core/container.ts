@@ -5,7 +5,13 @@ import { dbPool } from '../database/pool';
 
 // Elasticsearch Client (search engine only)
 const esClient = new Client({
-    node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200'
+    node: process.env.ELASTICSEARCH_HOST || process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
+    requestTimeout: 60000,
+    pingTimeout: 30000,
+    maxRetries: 5,
+    sniffOnStart: false,
+    discovery for Docker
+    resurrectStrategy: 'ping'
 });
 
 
