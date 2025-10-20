@@ -116,8 +116,9 @@ services:
 
       # Sentry (optional)
       - SENTRY_DSN=${SENTRY_DSN:-}
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,9 +136,25 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: onemail-frontend
-    ports:
-      - "${FRONTEND_PORT:-80}:80"
+    expose:
+      - "80"
     depends_on:
+      - backend
+    networks:
+      - onemail-network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: onemail-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
       - backend
     networks:
       - onemail-network
