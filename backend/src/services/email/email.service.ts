@@ -53,7 +53,7 @@ export class EmailService {
     async bulkIndexEmails(emails: EmailDocument[]): Promise<{ indexed: number; skipped: number }> {
         const result = await this.postgresRepo.bulkIndex(emails);
 
-        if (this.syncQueue && result.indexed > 0) {
+        if (this.syncQueue?.isAvailable() && result.indexed > 0) {
             try {
                 const indexedEmailIds = emails
                     .filter((_, index) => index < result.indexed)
@@ -62,24 +62,33 @@ export class EmailService {
                 await this.syncQueue.queueBulkSync(indexedEmailIds);
             } catch (error: any) {
                 console.error('❌ Failed to queue bulk sync:', error.message);
+                await this.directBulkSyncToElasticsearch(emails);
             }
-        } else if (!this.syncQueue) {
+        } else {
             console.warn('⚠️ Queue not available, syncing directly to Elasticsearch');
-            try {
-                await this.elasticsearchRepo.bulkIndex(emails);
-            } catch (error: any) {
-                console.error('❌ Failed to bulk sync to Elasticsearch:', error.message);
-            }
+            await this.directBulkSyncToElasticsearch(emails);
         }
 
         return result;
     }
 
     /**
+     * Direct bulk sync to Elasticsearch (fallback when queue is unavailable)
+     */
+    private async directBulkSyncToElasticsearch(emails: EmailDocument[]): Promise<void> {
+        try {
+            await this.elasticsearchRepo.bulkIndex(emails);
+            console.log(`✅ Direct synced ${emails.length} emails to Elasticsearch`);
+        } catch (error: any) {
+            console.error(`❌ Failed to direct bulk sync:`, error.message);
+        }
+    }
+
+    /**
      * Get email by ID (from PostgreSQL)
      */
-    async getEmailById(emailId: string): Promise<EmailDocument> {
-        return await this.postgresRepo.getById(emailId);
+    async getEmailById(emailId: string, userAccountIds?: string[]): Promise<EmailDocument> {
+        return await this.postgresRepo.getById(emailId, userAccountIds);
     }
 
     /**
@@ -90,45 +99,34 @@ export class EmailService {
     }
 
     /**
-     * Update email category with queue sync
+     * Update email category with direct Elasticsearch sync
+     * Uses direct updateCategory instead of re-indexing entire document for better performance
      */
     async updateEmailCategory(emailId: string, category: string): Promise<void> {
         await this.postgresRepo.updateCategory(emailId, category);
 
-        if (this.syncQueue) {
-            try {
-                await this.syncQueue.queueEmailSync(emailId, JobPriority.HIGH);
-            } catch (error: any) {
-                console.error('❌ Failed to queue category update sync:', error.message);
-            }
-        } else {
-            try {
-                await this.elasticsearchRepo.updateCategory(emailId, category);
-            } catch (error: any) {
-                console.error('❌ Failed to sync category update to Elasticsearch:', error.message);
-            }
+        try {
+            await this.elasticsearchRepo.updateCategory(emailId, category);
+            console.log(`✅ Updated category for email ${emailId}: ${category}`);
+        } catch (error: any) {
+            console.error('❌ Failed to update category in Elasticsearch:', error.message);
+            console.warn('⚠️  PostgreSQL is updated, but Elasticsearch sync failed. Use /sync/elasticsearch to fix.');
         }
     }
 
     /**
-     * Bulk update email categories with queue sync
+     * Bulk update email categories with direct Elasticsearch sync
+     * Uses direct bulkUpdateCategories instead of re-indexing entire documents for better performance
      */
     async bulkUpdateEmailCategories(updates: Array<{ id: string; category: string }>): Promise<void> {
         await this.postgresRepo.bulkUpdateCategories(updates);
 
-        if (this.syncQueue) {
-            try {
-                const emailIds = updates.map(u => u.id);
-                await this.syncQueue.queueBulkSync(emailIds);
-            } catch (error: any) {
-                console.error('❌ Failed to queue bulk category update sync:', error.message);
-            }
-        } else {
-            try {
-                await this.elasticsearchRepo.bulkUpdateCategories(updates);
-            } catch (error: any) {
-                console.error('❌ Failed to sync bulk category updates to Elasticsearch:', error.message);
-            }
+        try {
+            await this.elasticsearchRepo.bulkUpdateCategories(updates);
+            console.log(`✅ Updated ${updates.length} email categories in Elasticsearch`);
+        } catch (error: any) {
+            console.error('❌ Failed to bulk update categories in Elasticsearch:', error.message);
+            console.warn('⚠️  PostgreSQL is updated, but Elasticsearch sync failed. Use /sync/elasticsearch to fix.');
         }
     }
 
@@ -173,39 +171,43 @@ export class EmailService {
     /**
      * Get uncategorized emails (from PostgreSQL)
      */
-    async getUncategorizedEmails(): Promise<EmailDocument[]> {
-        return await this.postgresRepo.getUncategorized();
+    async getUncategorizedEmails(userAccountIds?: string[]): Promise<EmailDocument[]> {
+        return await this.postgresRepo.getUncategorized(userAccountIds);
     }
 
     /**
      * Get category statistics (from PostgreSQL)
      */
-    async getCategoryStats(): Promise<Array<{ category: string; count: number }>> {
-        return await this.postgresRepo.getCategoryStats();
+    async getCategoryStats(userAccountIds?: string[]): Promise<Array<{ category: string; count: number }>> {
+        return await this.postgresRepo.getCategoryStats(userAccountIds);
     }
 
     /**
      * Get account statistics (from PostgreSQL)
      */
-    async getAccountStats(): Promise<Array<{ account: string; count: number }>> {
-        return await this.postgresRepo.getAccountStats();
+    async getAccountStats(userAccountIds?: string[]): Promise<Array<{ account: string; count: number }>> {
+        return await this.postgresRepo.getAccountStats(userAccountIds);
     }
 
     /**
      * Get email count by account (from PostgreSQL)
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    async getEmailCountByAccount(account: string): Promise<number> {
-        return await this.postgresRepo.getCountByAccount(account);
+    async getEmailCountByAccount(account: string, userAccountIds?: string[]): Promise<number> {
+        return await this.postgresRepo.getCountByAccount(account, userAccountIds);
     }
 
     /**
      * Delete emails by account (from both PostgreSQL and Elasticsearch)
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    async deleteEmailsByAccount(account: string): Promise<number> {
-        const count = await this.postgresRepo.deleteByAccount(account);
+    async deleteEmailsByAccount(account: string, userAccountIds?: string[]): Promise<number> {
+        const count = await this.postgresRepo.deleteByAccount(account, userAccountIds);
 
         try {
-            await this.elasticsearchRepo.deleteByAccount(account);
+            await this.elasticsearchRepo.deleteByAccount(account, userAccountIds);
         } catch (error: any) {
             console.error('❌ Failed to delete from Elasticsearch:', error.message);
         }
@@ -214,12 +216,25 @@ export class EmailService {
     }
 
     /**
+     * Manually sync emails from PostgreSQL to Elasticsearch
+     * Bypasses queue - useful when Redis is down or to fix inconsistencies
+     */
+    async bulkSyncToElasticsearch(emails: EmailDocument[]): Promise<{ indexed: number; skipped: number }> {
+        try {
+            return await this.elasticsearchRepo.bulkIndex(emails, true);
+        } catch (error: any) {
+            console.error('❌ Failed to bulk sync to Elasticsearch:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * Categorize email by ID (uses AI categorization)
      */
-    async categorizeEmailById(emailId: string): Promise<{ category: string } | null> {
+    async categorizeEmailById(emailId: string, userAccountIds?: string[]): Promise<{ category: string } | null> {
         const { categorizeEmail } = await import('../ai/ai-categorization.service');
 
-        const emailResult = await this.getEmailById(emailId);
+        const emailResult = await this.getEmailById(emailId, userAccountIds);
         const email = emailResult as EmailDocument;
 
         if (!email) {

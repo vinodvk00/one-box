@@ -18,13 +18,15 @@ export interface IEmailRepository {
 
     /**
      * Bulk index emails
+     * @param emails - Array of email documents to index
+     * @param forceUpdate - If true, updates existing documents; if false, only indexes new documents
      */
-    bulkIndex(emails: EmailDocument[]): Promise<{ indexed: number; skipped: number }>;
+    bulkIndex(emails: EmailDocument[], forceUpdate?: boolean): Promise<{ indexed: number; skipped: number }>;
 
     /**
      * Get email by ID
      */
-    getById(emailId: string): Promise<EmailDocument>;
+    getById(emailId: string, userAccountIds?: string[]): Promise<EmailDocument>;
 
     /**
      * Get multiple emails by IDs
@@ -64,27 +66,31 @@ export interface IEmailRepository {
     /**
      * Get uncategorized emails (full documents)
      */
-    getUncategorized(): Promise<EmailDocument[]>;
+    getUncategorized(userAccountIds?: string[]): Promise<EmailDocument[]>;
 
     /**
      * Get category statistics
      */
-    getCategoryStats(): Promise<Array<{ category: string; count: number }>>;
+    getCategoryStats(userAccountIds?: string[]): Promise<Array<{ category: string; count: number }>>;
 
     /**
      * Get account statistics
      */
-    getAccountStats(): Promise<Array<{ account: string; count: number }>>;
+    getAccountStats(userAccountIds?: string[]): Promise<Array<{ account: string; count: number }>>;
 
     /**
      * Get email count by account
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    getCountByAccount(account: string): Promise<number>;
+    getCountByAccount(account: string, userAccountIds?: string[]): Promise<number>;
 
     /**
      * Delete emails by account
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    deleteByAccount(account: string): Promise<number>;
+    deleteByAccount(account: string, userAccountIds?: string[]): Promise<number>;
 
     /**
      * Create the emails index/table

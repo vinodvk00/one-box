@@ -10,14 +10,16 @@ import {
     getBatchCategorizationStatus,
     syncOAuthEmails,
     manageEmailIndex,
-    getIndexStats
+    getIndexStats,
+    syncToElasticsearch
 } from '../controllers/email.controller';
-import { requireAuth } from '../middleware/auth.middleware';
+import { requireAuth, requireEmailAccess } from '../middleware/auth.middleware';
 
 const router = Router();
 
 // Apply authentication middleware to ALL routes
 router.use(requireAuth);
+router.use(requireEmailAccess);
 
 
 /**
@@ -370,6 +372,37 @@ router.post('/sync/oauth', syncOAuthEmails);
  *         description: Failed to get stats
  */
 router.get('/index/stats', getIndexStats);
+
+/**
+ * @openapi
+ * /api/sync/elasticsearch:
+ *   post:
+ *     tags:
+ *       - Sync
+ *     summary: Manually sync emails to Elasticsearch
+ *     description: Syncs all user's emails from PostgreSQL to Elasticsearch. Use this to fix sync issues when Redis queue is down.
+ *     responses:
+ *       '200':
+ *         description: Sync completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 indexed:
+ *                   type: integer
+ *                 skipped:
+ *                   type: integer
+ *                 total:
+ *                   type: integer
+ *       '500':
+ *         description: Sync failed
+ */
+router.post('/sync/elasticsearch', syncToElasticsearch);
 
 /**
  * @openapi

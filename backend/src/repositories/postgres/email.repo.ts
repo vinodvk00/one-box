@@ -39,8 +39,9 @@ export class PostgresEmailRepository implements IEmailRepository {
 
     /**
      * Bulk index emails with duplicate prevention
+     * @param forceUpdate - Ignored for PostgreSQL (always uses ON CONFLICT)
      */
-    async bulkIndex(emails: EmailDocument[]): Promise<{ indexed: number; skipped: number }> {
+    async bulkIndex(emails: EmailDocument[], forceUpdate?: boolean): Promise<{ indexed: number; skipped: number }> {
         if (emails.length === 0) return { indexed: 0, skipped: 0 };
 
         const client = await this.pool.connect();
@@ -116,8 +117,24 @@ export class PostgresEmailRepository implements IEmailRepository {
 
     /**
      * Get email by ID
+     * @param emailId - The email ID to fetch
+     * @param userAccountIds - User's account IDs for access control
+     *                        - undefined: No access control (for internal/queue operations)
+     *                        - empty array []: Enforce access control, will deny
+     *                        - array with IDs: Enforce access control with allowed IDs
      */
-    async getById(emailId: string): Promise<EmailDocument> {
+    async getById(emailId: string, userAccountIds?: string[]): Promise<EmailDocument> {
+        const conditions = ['e.id = $1'];
+        const params: any[] = [emailId];
+
+        if (userAccountIds !== undefined) {
+            if (userAccountIds.length === 0) {
+                throw new Error(`Email ${emailId} not found or access denied`);
+            }
+            conditions.push('e.account_id = ANY($2)');
+            params.push(userAccountIds);
+        }
+
         const result = await this.pool.query(
             `SELECT e.*,
                 json_agg(
@@ -125,13 +142,13 @@ export class PostgresEmailRepository implements IEmailRepository {
                 ) FILTER (WHERE er.recipient_type = 'to') as recipients
             FROM emails e
             LEFT JOIN email_recipients er ON er.email_id = e.id
-            WHERE e.id = $1
+            WHERE ${conditions.join(' AND ')}
             GROUP BY e.id`,
-            [emailId]
+            params
         );
 
         if (result.rows.length === 0) {
-            throw new Error(`Email ${emailId} not found`);
+            throw new Error(`Email ${emailId} not found or access denied`);
         }
 
         return this.mapRowToEmail(result.rows[0]);
@@ -212,6 +229,20 @@ export class PostgresEmailRepository implements IEmailRepository {
         const params: any[] = [];
         let paramIndex = 1;
 
+        if (filters?.userAccountIds && filters.userAccountIds.length > 0) {
+            conditions.push(`account_id = ANY($${paramIndex})`);
+            params.push(filters.userAccountIds);
+            paramIndex++;
+        } else {
+            return {
+                emails: [],
+                total: 0,
+                page: pagination?.page || 1,
+                limit: pagination?.limit || 50,
+                totalPages: 0
+            };
+        }
+
         if (query) {
             conditions.push(`(
                 subject ILIKE $${paramIndex} OR
@@ -289,7 +320,19 @@ export class PostgresEmailRepository implements IEmailRepository {
     /**
      * Get uncategorized emails
      */
-    async getUncategorized(): Promise<EmailDocument[]> {
+    async getUncategorized(userAccountIds?: string[]): Promise<EmailDocument[]> {
+        const conditions = ['e.category IS NULL'];
+        const params: any[] = [];
+
+        if (userAccountIds && userAccountIds.length > 0) {
+            conditions.push('e.account_id = ANY($1)');
+            params.push(userAccountIds);
+        } else {
+            return [];
+        }
+
+        const whereClause = conditions.join(' AND ');
+
         const result = await this.pool.query(
             `SELECT e.*,
                 json_agg(
@@ -297,10 +340,11 @@ export class PostgresEmailRepository implements IEmailRepository {
                 ) FILTER (WHERE er.recipient_type = 'to') as recipients
             FROM emails e
             LEFT JOIN email_recipients er ON er.email_id = e.id
-            WHERE e.category IS NULL
+            WHERE ${whereClause}
             GROUP BY e.id
             ORDER BY e.date DESC
-            LIMIT 100`
+            LIMIT 100`,
+            params
         );
         return result.rows.map(row => this.mapRowToEmail(row));
     }
@@ -308,14 +352,26 @@ export class PostgresEmailRepository implements IEmailRepository {
     /**
      * Get category statistics
      */
-    async getCategoryStats(): Promise<Array<{ category: string; count: number }>> {
+    async getCategoryStats(userAccountIds?: string[]): Promise<Array<{ category: string; count: number }>> {
+        const params: any[] = [];
+        let whereClause = '';
+
+        if (userAccountIds && userAccountIds.length > 0) {
+            whereClause = 'WHERE account_id = ANY($1)';
+            params.push(userAccountIds);
+        } else {
+            return [];
+        }
+
         const result = await this.pool.query(
             `SELECT
                 COALESCE(category, 'uncategorized') as category,
                 COUNT(*) as count
             FROM emails
+            ${whereClause}
             GROUP BY category
-            ORDER BY count DESC`
+            ORDER BY count DESC`,
+            params
         );
 
         return result.rows.map(row => ({
@@ -327,14 +383,26 @@ export class PostgresEmailRepository implements IEmailRepository {
     /**
      * Get account statistics
      */
-    async getAccountStats(): Promise<Array<{ account: string; count: number }>> {
+    async getAccountStats(userAccountIds?: string[]): Promise<Array<{ account: string; count: number }>> {
+        const params: any[] = [];
+        let whereClause = '';
+
+        if (userAccountIds && userAccountIds.length > 0) {
+            whereClause = 'WHERE account_id = ANY($1)';
+            params.push(userAccountIds);
+        } else {
+            return [];
+        }
+
         const result = await this.pool.query(
             `SELECT
                 account_id as account,
                 COUNT(*) as count
             FROM emails
+            ${whereClause}
             GROUP BY account_id
-            ORDER BY count DESC`
+            ORDER BY count DESC`,
+            params
         );
 
         return result.rows.map(row => ({
@@ -345,9 +413,10 @@ export class PostgresEmailRepository implements IEmailRepository {
 
     /**
      * Get email count by account (accepts account ID or email address)
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    async getCountByAccount(account: string): Promise<number> {
-        // First, try to find the account by email address
+    async getCountByAccount(account: string, userAccountIds?: string[]): Promise<number> {
         const accountLookup = await this.pool.query(
             `SELECT id FROM email_accounts WHERE email = $1`,
             [account]
@@ -356,6 +425,12 @@ export class PostgresEmailRepository implements IEmailRepository {
         let accountId = account;
         if (accountLookup.rows.length > 0) {
             accountId = accountLookup.rows[0].id;
+        }
+
+        if (userAccountIds !== undefined) {
+            if (userAccountIds.length === 0 || !userAccountIds.includes(accountId)) {
+                throw new Error(`Access denied: You do not have access to account ${account}`);
+            }
         }
 
         const result = await this.pool.query(
@@ -367,8 +442,10 @@ export class PostgresEmailRepository implements IEmailRepository {
 
     /**
      * Delete emails by account (accepts account ID or email address)
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    async deleteByAccount(account: string): Promise<number> {
+    async deleteByAccount(account: string, userAccountIds?: string[]): Promise<number> {
         const accountLookup = await this.pool.query(
             `SELECT id FROM email_accounts WHERE email = $1`,
             [account]
@@ -377,6 +454,12 @@ export class PostgresEmailRepository implements IEmailRepository {
         let accountId = account;
         if (accountLookup.rows.length > 0) {
             accountId = accountLookup.rows[0].id;
+        }
+
+        if (userAccountIds !== undefined) {
+            if (userAccountIds.length === 0 || !userAccountIds.includes(accountId)) {
+                throw new Error(`Access denied: You do not have access to account ${account}`);
+            }
         }
 
         const result = await this.pool.query(

@@ -18,10 +18,16 @@ interface ProcessingState {
 const BATCH_SIZE = 10;
 const BATCH_DELAY_MS = 0; // Artificial delay between batches to respect rate limits
 
-// Global state (necessary for managing async operations)
-let state: ProcessingState = {
-    isProcessing: false,
-    shouldStop: false
+const userStates = new Map<string, ProcessingState>();
+
+const getUserState = (userId: string): ProcessingState => {
+    if (!userStates.has(userId)) {
+        userStates.set(userId, {
+            isProcessing: false,
+            shouldStop: false
+        });
+    }
+    return userStates.get(userId)!;
 };
 
 
@@ -170,36 +176,36 @@ const createBatches = <T>(array: T[], batchSize: number): T[][] => {
     return batches;
 };
 
-export const startBatchCategorization = async (): Promise<BatchCategorizationState> => {
+export const startBatchCategorization = async (userId: string, userAccountIds: string[]): Promise<BatchCategorizationState> => {
+    const state = getUserState(userId);
+
     if (state.isProcessing) {
-        console.log('Batch categorization already in progress.');
+        console.log(`[User ${userId}] Batch categorization already in progress.`);
         return createInitialBatchState();
     }
 
     state.isProcessing = true;
     state.shouldStop = false;
 
-    console.log('Starting batch categorization of uncategorized emails...');
+    console.log(`[User ${userId}] Starting batch categorization of uncategorized emails...`);
 
     let result = createInitialBatchState();
 
     try {
-        // Get all uncategorized email IDs
-        const uncategorizedIds = await getUncategorizedEmailIds();
-        console.log(`Found ${uncategorizedIds.length} uncategorized emails.`);
+        const uncategorizedIds = await getUncategorizedEmailIds(userAccountIds);
+        console.log(`[User ${userId}] Found ${uncategorizedIds.length} uncategorized emails.`);
 
         if (uncategorizedIds.length === 0) {
-            console.log('No uncategorized emails found.');
+            console.log(`[User ${userId}] No uncategorized emails found.`);
             return result;
         }
 
         const batches = createBatches(uncategorizedIds, BATCH_SIZE);
         const totalBatches = batches.length;
 
-        // Process batches sequentially with rate limiting
         for (let i = 0; i < batches.length; i++) {
             if (state.shouldStop) {
-                console.log('Batch categorization stopped by request.');
+                console.log(`[User ${userId}] Batch categorization stopped by request.`);
                 break;
             }
 
@@ -210,20 +216,18 @@ export const startBatchCategorization = async (): Promise<BatchCategorizationSta
 
             result = mergeBatchStates(result, batchResult);
 
-            // Log progress
-            logBatchProgress(batchNumber, totalBatches, batch.length, batchResult);
+            console.log(`[User ${userId}] Processing batch ${batchNumber}/${totalBatches} (${batch.length} emails)...`);
+            console.log(`[User ${userId}] Batch ${batchNumber} complete: ${batchResult.successful}/${batchResult.totalProcessed} successful`);
 
-            // Rate limiting: wait before next batch (except for last batch)
             if (i < batches.length - 1 && !state.shouldStop) {
-                logDelay(BATCH_DELAY_MS);
                 await delay(BATCH_DELAY_MS);
             }
         }
 
-        console.log(`Batch categorization complete: ${result.successful}/${result.totalProcessed} emails categorized successfully.`);
+        console.log(`[User ${userId}] Batch categorization complete: ${result.successful}/${result.totalProcessed} emails categorized successfully.`);
 
     } catch (error) {
-        console.error('Batch categorization failed:', error);
+        console.error(`[User ${userId}] Batch categorization failed:`, error);
     } finally {
         state.isProcessing = false;
     }
@@ -231,13 +235,20 @@ export const startBatchCategorization = async (): Promise<BatchCategorizationSta
     return result;
 };
 
-export const stopBatchCategorization = (): void => {
+export const stopBatchCategorization = (userId: string): void => {
+    const state = getUserState(userId);
     if (state.isProcessing) {
-        console.log('Stopping batch categorization...');
+        console.log(`[User ${userId}] Stopping batch categorization...`);
         state.shouldStop = true;
     }
 };
 
-export const isBatchCategorizationRunning = (): boolean => state.isProcessing;
+export const isBatchCategorizationRunning = (userId: string): boolean => {
+    const state = getUserState(userId);
+    return state.isProcessing;
+};
 
-export const getBatchCategorizationState = (): ProcessingState => ({ ...state });
+export const getBatchCategorizationState = (userId: string): ProcessingState => {
+    const state = getUserState(userId);
+    return { ...state };
+};

@@ -112,31 +112,39 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
 
     /**
      * Bulk index emails
+     * @param emails - Array of email documents to index
+     * @param forceUpdate - If true, updates existing documents; if false, only indexes new documents
      */
-    async bulkIndex(emails: EmailDocument[]): Promise<{ indexed: number; skipped: number }> {
+    async bulkIndex(emails: EmailDocument[], forceUpdate: boolean = false): Promise<{ indexed: number; skipped: number }> {
         if (emails.length === 0) return { indexed: 0, skipped: 0 };
 
         try {
-            const mgetResponse = await this.esClient.mget({
-                index: this.INDEX,
-                body: {
-                    ids: emails.map(e => e.id)
+            let emailsToIndex = emails;
+            let skippedCount = 0;
+
+            if (!forceUpdate) {
+                const mgetResponse = await this.esClient.mget({
+                    index: this.INDEX,
+                    body: {
+                        ids: emails.map(e => e.id)
+                    }
+                });
+
+                const existingIds = new Set(
+                    mgetResponse.docs
+                        .filter((doc: any) => doc.found)
+                        .map((doc: any) => doc._id)
+                );
+
+                emailsToIndex = emails.filter(email => !existingIds.has(email.id));
+                skippedCount = existingIds.size;
+
+                if (emailsToIndex.length === 0) {
+                    return { indexed: 0, skipped: emails.length };
                 }
-            });
-
-            const existingIds = new Set(
-                mgetResponse.docs
-                    .filter((doc: any) => doc.found)
-                    .map((doc: any) => doc._id)
-            );
-
-            const newEmails = emails.filter(email => !existingIds.has(email.id));
-
-            if (newEmails.length === 0) {
-                return { indexed: 0, skipped: emails.length };
             }
 
-            const bulkBody = newEmails.flatMap(email => {
+            const bulkBody = emailsToIndex.flatMap(email => {
                 const { id, ...emailBody } = email;
                 return [
                     { index: { _index: this.INDEX, _id: id } },
@@ -146,14 +154,18 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
 
             const bulkResponse = await this.esClient.bulk({
                 body: bulkBody,
-                refresh: false
+                refresh: true 
             });
 
             const errors = bulkResponse.items.filter((item: any) => item.index?.error);
 
+            if (errors.length > 0) {
+                console.error('Bulk index errors:', errors);
+            }
+
             return {
-                indexed: newEmails.length - errors.length,
-                skipped: existingIds.size
+                indexed: emailsToIndex.length - errors.length,
+                skipped: skippedCount
             };
         } catch (error) {
             throw error;
@@ -162,17 +174,33 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
 
     /**
      * Get email by ID
+     * @param emailId - The email ID to fetch
+     * @param userAccountIds - User's account IDs for access control
+     *                        - undefined: No access control (for internal/queue operations)
+     *                        - empty array []: Enforce access control, will deny
+     *                        - array with IDs: Enforce access control with allowed IDs
      */
-    async getById(emailId: string): Promise<EmailDocument> {
+    async getById(emailId: string, userAccountIds?: string[]): Promise<EmailDocument> {
         const result = await this.esClient.get({
             index: this.INDEX,
             id: emailId
         });
 
-        return {
+        const email = {
             id: result._id as string,
             ...(result._source as any)
         };
+
+        if (userAccountIds !== undefined) {
+            if (userAccountIds.length === 0) {
+                throw new Error(`Email ${emailId} not found or access denied`);
+            }
+            if (!userAccountIds.includes(email.account)) {
+                throw new Error(`Email ${emailId} not found or access denied`);
+            }
+        }
+
+        return email;
     }
 
     /**
@@ -252,6 +280,20 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
                 { date: { order: 'desc' } }
             ]
         };
+
+        if (filters?.userAccountIds && filters.userAccountIds.length > 0) {
+            searchBody.query.bool.must.push({
+                terms: { account: filters.userAccountIds }
+            });
+        } else {
+            return {
+                emails: [],
+                total: 0,
+                page: pagination?.page || 1,
+                limit: pagination?.limit || 50,
+                totalPages: 0
+            };
+        }
 
         if (query) {
             searchBody.query.bool.must.push({
@@ -348,13 +390,24 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
     /**
      * Get uncategorized emails (full documents)
      */
-    async getUncategorized(): Promise<EmailDocument[]> {
+    async getUncategorized(userAccountIds?: string[]): Promise<EmailDocument[]> {
         try {
+            const mustClauses: any[] = [];
+
+            if (userAccountIds && userAccountIds.length > 0) {
+                mustClauses.push({
+                    terms: { account: userAccountIds }
+                });
+            } else {
+                return [];
+            }
+
             const result = await this.esClient.search({
                 index: this.INDEX,
                 body: {
                     query: {
                         bool: {
+                            must: mustClauses,
                             must_not: {
                                 exists: {
                                     field: 'category'
@@ -380,12 +433,19 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
     /**
      * Get category statistics
      */
-    async getCategoryStats(): Promise<Array<{ category: string; count: number }>> {
+    async getCategoryStats(userAccountIds?: string[]): Promise<Array<{ category: string; count: number }>> {
         try {
+            if (!userAccountIds || userAccountIds.length === 0) {
+                return [];
+            }
+
             const result = await this.esClient.search({
                 index: this.INDEX,
                 body: {
                     size: 0,
+                    query: {
+                        terms: { account: userAccountIds }
+                    },
                     aggs: {
                         categories: {
                             terms: {
@@ -410,16 +470,25 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
     /**
      * Get account statistics
      */
-    async getAccountStats(): Promise<Array<{ account: string; count: number }>> {
+    async getAccountStats(userAccountIds?: string[]): Promise<Array<{ account: string; count: number }>> {
         try {
+            if (!userAccountIds || userAccountIds.length === 0) {
+                return [];
+            }
+
             const result = await this.esClient.search({
                 index: this.INDEX,
                 size: 0,
-                aggs: {
-                    accounts: {
-                        terms: {
-                            field: 'account',
-                            size: 100
+                body: {
+                    query: {
+                        terms: { account: userAccountIds }
+                    },
+                    aggs: {
+                        accounts: {
+                            terms: {
+                                field: 'account',
+                                size: 100
+                            }
                         }
                     }
                 }
@@ -437,9 +506,17 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
 
     /**
      * Get email count by account
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    async getCountByAccount(account: string): Promise<number> {
+    async getCountByAccount(account: string, userAccountIds?: string[]): Promise<number> {
         try {
+            if (userAccountIds !== undefined) {
+                if (userAccountIds.length === 0 || !userAccountIds.includes(account)) {
+                    throw new Error(`Access denied: You do not have access to account ${account}`);
+                }
+            }
+
             const result = await this.esClient.count({
                 index: this.INDEX,
                 query: {
@@ -448,14 +525,25 @@ export class ElasticsearchEmailRepository implements IEmailRepository {
             });
             return result.count;
         } catch (error) {
+            if (error instanceof Error && error.message.includes('Access denied')) {
+                throw error;
+            }
             return 0;
         }
     }
 
     /**
      * Delete emails by account
+     * @param account - Account ID or email address
+     * @param userAccountIds - Optional user account IDs for access control (defense-in-depth)
      */
-    async deleteByAccount(account: string): Promise<number> {
+    async deleteByAccount(account: string, userAccountIds?: string[]): Promise<number> {
+        if (userAccountIds !== undefined) {
+            if (userAccountIds.length === 0 || !userAccountIds.includes(account)) {
+                throw new Error(`Access denied: You do not have access to account ${account}`);
+            }
+        }
+
         const result = await this.esClient.deleteByQuery({
             index: this.INDEX,
             query: {

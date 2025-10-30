@@ -18,30 +18,49 @@ import { IEmailRepository } from '../repositories/interfaces/email.interface';
 import { EmailDocument } from '../types/email.types';
 
 export class EmailSyncQueue {
-    private queue: Queue.Queue;
+    private queue: Queue.Queue | null = null;
     private isProcessing: boolean = false;
+    private isConnected: boolean = false;
 
     constructor(
         private postgresRepo: IEmailRepository,
         private elasticsearchRepo: IEmailRepository
     ) {
-        this.queue = createQueue(QueueName.EMAIL_SYNC, {
-            settings: {
-                lockDuration: 30000,
-                stalledInterval: 30000,
-                maxStalledCount: 2
-            }
-        });
+        try {
+            this.queue = createQueue(QueueName.EMAIL_SYNC, {
+                settings: {
+                    lockDuration: 30000,
+                    stalledInterval: 30000,
+                    maxStalledCount: 2
+                }
+            });
 
-        this.setupProcessors();
+            this.setupProcessors();
+            this.setupEventListeners();
 
-        this.setupEventListeners();
+            this.queue.isReady().then(() => {
+                this.isConnected = true;
+                console.log('✅ Email sync queue connected to Redis');
+            }).catch((err) => {
+                console.warn('⚠️ Email sync queue failed to connect to Redis:', err.message);
+                console.warn('⚠️ Queue operations will be disabled. Direct sync will be used as fallback.');
+                this.isConnected = false;
+                this.queue = null;
+            });
+        } catch (error: any) {
+            console.warn('⚠️ Failed to create email sync queue:', error.message);
+            console.warn('⚠️ Queue operations will be disabled. Direct sync will be used as fallback.');
+            this.queue = null;
+            this.isConnected = false;
+        }
     }
 
     /**
      * Setup job processors
      */
     private setupProcessors(): void {
+        if (!this.queue) return;
+
         const concurrency = parseInt(process.env.QUEUE_CONCURRENCY || '5');
 
         this.queue.process(
@@ -52,7 +71,7 @@ export class EmailSyncQueue {
 
         this.queue.process(
             JobName.SYNC_BULK_EMAILS,
-            1, // Only 1 bulk job at a time to avoid overload, untill testing 
+            1, // Only 1 bulk job at a time to avoid overload, untill testing
             this.processSyncBulkEmails.bind(this)
         );
 
@@ -73,14 +92,14 @@ export class EmailSyncQueue {
 
             await job.progress(50);
 
-            await this.elasticsearchRepo.index(email);
+            await this.elasticsearchRepo.bulkIndex([email], true);
 
             await job.progress(100);
 
             console.log(`✅ Synced email ${emailId} to Elasticsearch`);
         } catch (error: any) {
             console.error(`❌ Failed to sync email ${emailId}:`, error.message);
-            throw error; // Bull will retry based on configuration
+            throw error; 
         }
     }
 
@@ -101,7 +120,7 @@ export class EmailSyncQueue {
 
                 const emails = await this.postgresRepo.getByIds(batch);
 
-                await this.elasticsearchRepo.bulkIndex(emails);
+                await this.elasticsearchRepo.bulkIndex(emails, true);
 
                 synced += batch.length;
                 await job.progress((synced / total) * 100);
@@ -120,6 +139,8 @@ export class EmailSyncQueue {
      * Setup event listeners for monitoring
      */
     private setupEventListeners(): void {
+        if (!this.queue) return;
+
         this.queue.on('completed', (job: Job, result: any) => {
             console.log(`✅ Job ${job.id} completed`);
         });
@@ -151,7 +172,11 @@ export class EmailSyncQueue {
     async queueEmailSync(
         emailId: string,
         priority: JobPriority = JobPriority.NORMAL
-    ): Promise<Queue.Job<SyncEmailJobData>> {
+    ): Promise<Queue.Job<SyncEmailJobData> | null> {
+        if (!this.queue || !this.isConnected) {
+            throw new Error('Queue not available');
+        }
+
         const job = await this.queue.add(
             JobName.SYNC_EMAIL,
             { emailId, priority },
@@ -175,7 +200,11 @@ export class EmailSyncQueue {
     async queueBulkSync(
         emailIds: string[],
         batchSize: number = 100
-    ): Promise<Queue.Job<SyncBulkEmailsJobData>> {
+    ): Promise<Queue.Job<SyncBulkEmailsJobData> | null> {
+        if (!this.queue || !this.isConnected) {
+            throw new Error('Queue not available');
+        }
+
         const job = await this.queue.add(
             JobName.SYNC_BULK_EMAILS,
             { emailIds, batchSize },
@@ -194,6 +223,10 @@ export class EmailSyncQueue {
      * Get queue metrics
      */
     async getMetrics(): Promise<QueueMetrics> {
+        if (!this.queue || !this.isConnected) {
+            return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0 };
+        }
+
         const [waiting, active, completed, failed, delayed, paused] = await Promise.all([
             this.queue.getWaitingCount(),
             this.queue.getActiveCount(),
@@ -210,6 +243,7 @@ export class EmailSyncQueue {
      * Get failed jobs
      */
     async getFailedJobs(): Promise<Job[]> {
+        if (!this.queue || !this.isConnected) return [];
         return await this.queue.getFailed();
     }
 
@@ -217,6 +251,8 @@ export class EmailSyncQueue {
      * Retry all failed jobs
      */
     async retryFailedJobs(): Promise<number> {
+        if (!this.queue || !this.isConnected) return 0;
+
         const failedJobs = await this.queue.getFailed();
         let retried = 0;
 
@@ -237,6 +273,7 @@ export class EmailSyncQueue {
      * Clear completed jobs
      */
     async clearCompleted(): Promise<void> {
+        if (!this.queue || !this.isConnected) return;
         await this.queue.clean(0, 'completed');
         console.log('🧹 Cleared completed jobs');
     }
@@ -245,6 +282,7 @@ export class EmailSyncQueue {
      * Clear failed jobs
      */
     async clearFailed(): Promise<void> {
+        if (!this.queue || !this.isConnected) return;
         await this.queue.clean(0, 'failed');
         console.log('🧹 Cleared failed jobs');
     }
@@ -253,6 +291,7 @@ export class EmailSyncQueue {
      * Pause queue
      */
     async pause(): Promise<void> {
+        if (!this.queue || !this.isConnected) return;
         await this.queue.pause();
         console.log('⏸️ Queue paused');
     }
@@ -261,6 +300,7 @@ export class EmailSyncQueue {
      * Resume queue
      */
     async resume(): Promise<void> {
+        if (!this.queue || !this.isConnected) return;
         await this.queue.resume();
         console.log('▶️ Queue resumed');
     }
@@ -268,7 +308,7 @@ export class EmailSyncQueue {
     /**
      * Get queue instance (for Bull Board)
      */
-    getQueue(): Queue.Queue {
+    getQueue(): Queue.Queue | null {
         return this.queue;
     }
 
@@ -276,10 +316,17 @@ export class EmailSyncQueue {
      * Gracefully close queue
      */
     async close(): Promise<void> {
-        if (this.isProcessing) {
+        if (this.isProcessing && this.queue) {
             await this.queue.close();
             this.isProcessing = false;
             console.log('👋 Email sync queue closed');
         }
+    }
+
+    /**
+     * Check if queue is available and connected
+     */
+    isAvailable(): boolean {
+        return this.isConnected && this.queue !== null;
     }
 }

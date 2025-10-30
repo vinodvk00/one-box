@@ -61,15 +61,24 @@ async function initialize() {
         throw error;
     }
 
-    const serverAdapter = new ExpressAdapter();
-    serverAdapter.setBasePath('/admin/queues');
+    // Setup Bull Board for queue monitoring (only if queue is available)
+    const queue = emailSyncQueue.getQueue();
+    if (queue) {
+        const serverAdapter = new ExpressAdapter();
+        serverAdapter.setBasePath('/admin/queues');
 
-    createBullBoard({
-        queues: [new BullAdapter(emailSyncQueue.getQueue())],
-        serverAdapter: serverAdapter,
-    });
+        createBullBoard({
+            queues: [new BullAdapter(queue)],
+            serverAdapter: serverAdapter,
+        });
 
-    app.use('/admin/queues', serverAdapter.getRouter());
+        // Protect Bull Board admin panel - require authentication and admin role
+        const { requireAuth, requireAdmin } = await import('./middleware/auth.middleware');
+        app.use('/admin/queues', requireAuth, requireAdmin, serverAdapter.getRouter());
+        console.log('✅ Bull Board admin panel available at /admin/queues (admin only)');
+    } else {
+        console.warn('⚠️  Bull Board not available - Redis queue is not connected');
+    }
 
     app.use('/api', emailRoutes);
     app.use('/auth', userAuthRoutes);

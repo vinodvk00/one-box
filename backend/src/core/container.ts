@@ -176,7 +176,11 @@ export const bulkIndexEmails = async (emails: any[]): Promise<{ indexed: number;
 /**
  * Get uncategorized email IDs (legacy wrapper)
  */
-export const getUncategorizedEmailIds = async (): Promise<string[]> => {
+export const getUncategorizedEmailIds = async (userAccountIds?: string[]): Promise<string[]> => {
+    if (userAccountIds) {
+        const uncategorizedEmails = await emailRepository.getUncategorized(userAccountIds);
+        return uncategorizedEmails.map(email => email.id);
+    }
     return await emailService.getUncategorizedEmailIds();
 };
 
