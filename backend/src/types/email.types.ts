@@ -37,6 +37,7 @@ export interface SearchFilters {
     account?: string;
     folder?: string;
     category?: string;
+    userAccountIds?: string[]; // User's owned email account IDs (UUIDs) for access control
 }
 
 /**

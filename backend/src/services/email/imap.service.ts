@@ -109,16 +109,15 @@ const createDateThreshold = (daysAgo: number): Date => {
 
 const logCategorizationStatus = async (account: string): Promise<void> => {
     try {
-        const stats = await getCategoryStats();
         const uncategorizedIds = await getUncategorizedEmailIds();
 
-        console.log(`\n📊 [${account}] Email categorization summary:`);
-        stats.forEach((stat: any) => {
-            console.log(`   ${stat.category}: ${stat.count} emails`);
-        });
+        console.log(`\n📊 [${account}] Email status:`);
 
         if (uncategorizedIds.length > 0) {
-            console.log(`   🔍 Uncategorized: ${uncategorizedIds.length} emails`);
+            console.log(`   🔍 Uncategorized emails: ${uncategorizedIds.length}`);
+            console.log(`   ℹ️  Users can categorize their emails from the dashboard`);
+        } else {
+            console.log(`   ✅ All emails categorized`);
         }
         console.log('');
     } catch (error) {
@@ -132,11 +131,6 @@ const ensureAllEmailsCategorized = async (account: string): Promise<void> => {
         return;
     }
 
-    if (isBatchCategorizationRunning()) {
-        console.log(`[${account}] Batch categorization already in progress, skipping...`);
-        return;
-    }
-
     try {
         // Get current uncategorized count
         const uncategorizedIds = await getUncategorizedEmailIds();
@@ -146,22 +140,13 @@ const ensureAllEmailsCategorized = async (account: string): Promise<void> => {
             return;
         }
 
-        console.log(`🔄 [${account}] Found ${uncategorizedIds.length} uncategorized emails. Starting batch categorization...`);
+        console.log(`ℹ️  [${account}] Found ${uncategorizedIds.length} uncategorized emails. Users can trigger categorization from the dashboard.`);
 
-        // Start batch categorization and wait for completion
-        const result = await startBatchCategorization();
 
-        console.log(`✅ [${account}] Batch categorization completed: ${result.successful}/${result.totalProcessed} emails categorized successfully`);
-
-        if (result.failed > 0) {
-            console.warn(`⚠️  [${account}] ${result.failed} emails failed to categorize. Check logs for details.`);
-        }
-
-        // Log final status
         await logCategorizationStatus(account);
 
     } catch (error) {
-        console.error(`❌ [${account}] Error in batch categorization:`, error);
+        console.error(`❌ [${account}] Error checking categorization status:`, error);
     }
 };
 

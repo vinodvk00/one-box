@@ -5,7 +5,12 @@ import { dbPool } from '../database/pool';
 
 // Elasticsearch Client (search engine only)
 const esClient = new Client({
-    node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200'
+    node: process.env.ELASTICSEARCH_HOST || process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
+    requestTimeout: 60000,
+    pingTimeout: 30000,
+    maxRetries: 5,
+    sniffOnStart: false, 
+    resurrectStrategy: 'ping'
 });
 
 
@@ -46,6 +51,18 @@ export const emailRepository: IEmailRepository = new PostgresEmailRepository(pgP
 export const emailSearchRepository = new ElasticsearchEmailRepository(esClient);
 
 /**
+ * QUEUE SERVICES (Redis Bull)
+ * Async job processing for syncing data to Elasticsearch
+ */
+
+import { EmailSyncQueue } from '../queues/email-sync.queue';
+
+export const emailSyncQueue = new EmailSyncQueue(
+    emailRepository,
+    emailSearchRepository
+);
+
+/**
  * Services contain business logic and use repositories for data access
  */
 
@@ -58,17 +75,21 @@ import { EmailService } from '../services/email/email.service';
 export const userService = new UserService(userRepository);
 export const authService = new AuthService(userRepository);
 export const oauthService = new OAuthService(oauthRepository, accountRepository);
-export const emailService = new EmailService(emailRepository);
+export const emailService = new EmailService(
+    emailRepository,
+    emailSearchRepository,
+    emailSyncQueue
+);
 
 
 import { dbInitializer } from '../database/init';
 
 /**
- * Initialize All Databases (PostgreSQL + Elasticsearch)
+ * Initialize All Databases (PostgreSQL + Elasticsearch + Redis Queue)
  */
 export async function initializeRepositories(): Promise<void> {
     try {
-        console.log('📦 Initializing databases...');
+        console.log('📦 Initializing databases and queues...');
 
         console.log('\n🐘 PostgreSQL (Source of Truth):');
         await dbInitializer.initialize();
@@ -77,9 +98,30 @@ export async function initializeRepositories(): Promise<void> {
         await emailSearchRepository.createIndex();
         console.log('✅ Email search index initialized');
 
-        console.log('\n🎉 All databases initialized successfully!');
+        console.log('\n🔄 Redis Queue (Background Sync):');
+        console.log('✅ Email sync queue initialized');
+
+        console.log('\n🎉 All databases and queues initialized successfully!');
     } catch (error) {
-        console.error('❌ Failed to initialize databases:', error);
+        console.error('❌ Failed to initialize:', error);
+        throw error;
+    }
+}
+
+/**
+ * Gracefully shutdown all services
+ */
+export async function shutdown(): Promise<void> {
+    try {
+        console.log('\n👋 Shutting down services...');
+
+        await emailSyncQueue.close();
+
+        await dbPool.close();
+
+        console.log('✅ All services shut down gracefully');
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
         throw error;
     }
 }
@@ -134,7 +176,11 @@ export const bulkIndexEmails = async (emails: any[]): Promise<{ indexed: number;
 /**
  * Get uncategorized email IDs (legacy wrapper)
  */
-export const getUncategorizedEmailIds = async (): Promise<string[]> => {
+export const getUncategorizedEmailIds = async (userAccountIds?: string[]): Promise<string[]> => {
+    if (userAccountIds) {
+        const uncategorizedEmails = await emailRepository.getUncategorized(userAccountIds);
+        return uncategorizedEmails.map(email => email.id);
+    }
     return await emailService.getUncategorizedEmailIds();
 };
 

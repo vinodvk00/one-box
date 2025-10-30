@@ -14,6 +14,10 @@ import { initializeDatabase } from './services/shared/database-init.service';
 import { createSessionMiddleware } from './middleware/session.middleware';
 import statusMonitor from 'express-status-monitor';
 import morgan from 'morgan';
+import { createBullBoard } from '@bull-board/api';
+import { BullAdapter } from '@bull-board/api/bullAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+import { emailSyncQueue } from './core/container';
 
 dotenv.config();
 
@@ -55,6 +59,25 @@ async function initialize() {
         app.use(sessionMiddleware);
     } catch (error) {
         throw error;
+    }
+
+    // Setup Bull Board for queue monitoring (only if queue is available)
+    const queue = emailSyncQueue.getQueue();
+    if (queue) {
+        const serverAdapter = new ExpressAdapter();
+        serverAdapter.setBasePath('/admin/queues');
+
+        createBullBoard({
+            queues: [new BullAdapter(queue)],
+            serverAdapter: serverAdapter,
+        });
+
+        // Protect Bull Board admin panel - require authentication and admin role
+        const { requireAuth, requireAdmin } = await import('./middleware/auth.middleware');
+        app.use('/admin/queues', requireAuth, requireAdmin, serverAdapter.getRouter());
+        console.log('✅ Bull Board admin panel available at /admin/queues (admin only)');
+    } else {
+        console.warn('⚠️  Bull Board not available - Redis queue is not connected');
     }
 
     app.use('/api', emailRoutes);

@@ -94,3 +94,70 @@ export const requireAccountAccess = async (
 export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
     next();
 };
+
+/**
+ * Middleware to ensure users can only access emails from their own connected accounts
+ *
+ * This middleware:
+ * 1. Fetches all email accounts connected to the authenticated user
+ * 2. Stores the list of account emails in req for downstream use
+ * 3. If an 'account' filter is provided in query/body, validates user owns it
+ *
+ * Must be used after requireAuth middleware
+ *
+ * Usage in routes:
+ *   router.use(requireAuth);
+ *   router.use(requireEmailAccess);
+ */
+export const requireEmailAccess = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const userId = req.session?.userId;
+        if (!userId) {
+            res.status(401).json({
+                error: 'Unauthorized',
+                message: 'Please login to access this resource'
+            });
+            return;
+        }
+
+        const userAccounts = await accountRepository.getByUserId(userId);
+
+        if (!userAccounts || userAccounts.length === 0) {
+            res.status(403).json({
+                error: 'Forbidden',
+                message: 'No email accounts connected. Please connect an email account first.'
+            });
+            return;
+        }
+
+        const userAccountIds = userAccounts.map(acc => acc.id); 
+        const userAccountEmails = userAccounts.map(acc => acc.email); 
+
+        (req as any).userAccountIds = userAccountIds; 
+        (req as any).userAccountEmails = userAccountEmails; 
+        (req as any).userId = userId;
+        const accountFilter = req.query.account || req.body?.email || req.body?.account;
+
+        if (accountFilter) {
+            if (!userAccountEmails.includes(accountFilter as string)) {
+                res.status(403).json({
+                    error: 'Forbidden',
+                    message: `You do not have access to the email account: ${accountFilter}`
+                });
+                return;
+            }
+        }
+
+        next();
+    } catch (error) {
+        console.error('Email access verification failed:', error);
+        res.status(500).json({
+            error: 'Internal Server Error',
+            message: 'Failed to verify email access permissions'
+        });
+    }
+};

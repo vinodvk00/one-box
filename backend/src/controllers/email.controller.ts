@@ -17,6 +17,7 @@ import {
 export const searchEmails = async (req: Request, res: Response) => {
     try {
         const { q, account, folder, category, page, limit } = req.query;
+        const userAccountIds = (req as any).userAccountIds || [];
 
         const pageNum = parseInt(page as string) || 1;
         const limitNum = parseInt(limit as string) || 50;
@@ -26,7 +27,8 @@ export const searchEmails = async (req: Request, res: Response) => {
             {
                 account: account as string,
                 folder: folder as string,
-                category: category as string
+                category: category as string,
+                userAccountIds
             },
             {
                 page: pageNum,
@@ -46,6 +48,7 @@ export const searchEmails = async (req: Request, res: Response) => {
 export const getAllEmails = async (req: Request, res: Response) => {
     try {
         const { account, folder, category, page, limit } = req.query;
+        const userAccountIds = (req as any).userAccountIds || [];
 
         // Parse pagination parameters with defaults
         const pageNum = parseInt(page as string) || 1;
@@ -54,7 +57,8 @@ export const getAllEmails = async (req: Request, res: Response) => {
         const result = await emailService.searchEmails('', {
             account: account as string,
             folder: folder as string,
-            category: category as string
+            category: category as string,
+            userAccountIds
         }, {
             page: pageNum,
             limit: limitNum
@@ -71,7 +75,8 @@ export const getAllEmails = async (req: Request, res: Response) => {
  */
 export const getEmailById = async (req: Request, res: Response) => {
     try {
-        const email = await emailService.getEmailById(req.params.id);
+        const userAccountIds = (req as any).userAccountIds || [];
+        const email = await emailService.getEmailById(req.params.id, userAccountIds);
         res.json(email);
     } catch (error) {
         console.error(`Email not found for id: ${req.params.id}`, error);
@@ -84,7 +89,8 @@ export const getEmailById = async (req: Request, res: Response) => {
  */
 export const getUncategorizedEmails = async (req: Request, res: Response) => {
     try {
-        const emails = await emailService.getUncategorizedEmails();
+        const userAccountIds = (req as any).userAccountIds || [];
+        const emails = await emailService.getUncategorizedEmails(userAccountIds);
         res.json(emails);
     } catch (error) {
         console.error('Failed to fetch uncategorized emails:', error);
@@ -97,7 +103,8 @@ export const getUncategorizedEmails = async (req: Request, res: Response) => {
  */
 export const categorizeEmail = async (req: Request, res: Response) => {
     try {
-        const result = await emailService.categorizeEmailById(req.params.id);
+        const userAccountIds = (req as any).userAccountIds || [];
+        const result = await emailService.categorizeEmailById(req.params.id, userAccountIds);
         if (!result) {
             return res.status(500).json({ error: 'Categorization failed' });
         }
@@ -113,7 +120,8 @@ export const categorizeEmail = async (req: Request, res: Response) => {
  */
 export const getCategoryStats = async (req: Request, res: Response) => {
     try {
-        const stats = await emailService.getCategoryStats();
+        const userAccountIds = (req as any).userAccountIds || [];
+        const stats = await emailService.getCategoryStats(userAccountIds);
         res.json(stats);
     } catch (error) {
         console.error('Failed to fetch category stats:', error);
@@ -126,14 +134,21 @@ export const getCategoryStats = async (req: Request, res: Response) => {
  */
 export const startBatchCategorization = async (req: Request, res: Response) => {
     try {
-        if (isBatchCategorizationRunning()) {
+        const userId = (req as any).userId;
+        const userAccountIds = (req as any).userAccountIds || [];
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        if (isBatchCategorizationRunning(userId)) {
             res.json({
                 status: 'already_running',
-                message: 'Batch categorization is already in progress'
+                message: 'Batch categorization is already in progress for your account'
             });
         } else {
-            startBatchCategorizationService().catch(err => {
-                console.error('Batch categorization error:', err);
+            startBatchCategorizationService(userId, userAccountIds).catch(err => {
+                console.error(`[User ${userId}] Batch categorization error:`, err);
             });
             res.json({
                 status: 'started',
@@ -151,8 +166,15 @@ export const startBatchCategorization = async (req: Request, res: Response) => {
  */
 export const getBatchCategorizationStatus = async (req: Request, res: Response) => {
     try {
-        const isRunning = isBatchCategorizationRunning();
-        const uncategorizedEmails = await emailService.getUncategorizedEmails();
+        const userId = (req as any).userId;
+        const userAccountIds = (req as any).userAccountIds || [];
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const isRunning = isBatchCategorizationRunning(userId);
+        const uncategorizedEmails = await emailService.getUncategorizedEmails(userAccountIds);
 
         res.json({
             isRunning,
@@ -171,8 +193,10 @@ export const getBatchCategorizationStatus = async (req: Request, res: Response) 
 export const syncOAuthEmails = async (req: Request, res: Response) => {
     try {
         const { email, daysBack = 30, forceReindex = false } = req.body;
+        const userId = (req as any).userId;
+        const userAccountEmails = (req as any).userAccountEmails || [];
 
-        console.log(`🔄 Starting OAuth email sync${email ? ` for ${email}` : ' for all accounts'}${forceReindex ? ' (force re-index)' : ''}...`);
+        console.log(`🔄 Starting OAuth email sync${email ? ` for ${email}` : ' for user accounts'}${forceReindex ? ' (force re-index)' : ''}...`);
 
         if (email) {
             const isValidConnection = await oauthService.hasValidOAuthConnection(email);
@@ -200,11 +224,24 @@ export const syncOAuthEmails = async (req: Request, res: Response) => {
                 }
             });
         } else {
-            await syncAllOAuthAccounts(daysBack);
+            const syncedAccounts: string[] = [];
+            for (const userEmail of userAccountEmails) {
+                try {
+                    const isValidConnection = await oauthService.hasValidOAuthConnection(userEmail);
+                    if (isValidConnection) {
+                        await fetchGmailMessages(userEmail, daysBack, 1000, forceReindex);
+                        syncedAccounts.push(userEmail);
+                        console.log(`✅ Synced ${userEmail}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to sync ${userEmail}:`, error);
+                }
+            }
+
             res.json({
                 success: true,
-                message: 'Successfully synced emails for all OAuth accounts',
-                syncedAccounts: []
+                message: `Successfully synced emails for ${syncedAccounts.length} of your OAuth accounts`,
+                syncedAccounts
             });
         }
 
@@ -221,6 +258,8 @@ export const syncOAuthEmails = async (req: Request, res: Response) => {
 export const manageEmailIndex = async (req: Request, res: Response) => {
     try {
         const { action, email, daysBack = 30 } = req.body;
+        const userAccountIds = (req as any).userAccountIds || [];
+        const userAccountEmails = (req as any).userAccountEmails || [];
 
         if (!action || !email) {
             return res.status(400).json({
@@ -229,9 +268,23 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
             });
         }
 
+        if (!userAccountEmails.includes(email)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Forbidden',
+                message: `You do not have access to the email account: ${email}`
+            });
+        }
+
+        const { accountRepository } = await import('../core/container');
+        const userAccounts = await accountRepository.getByUserId((req as any).userId);
+        const targetAccount = userAccounts.find((acc: any) => acc.email === email);
+        const accountId = targetAccount?.id || email;
+
         switch (action) {
             case 'delete':
-                const deletedCount = await emailService.deleteEmailsByAccount(email);
+                // Pass userAccountIds for defense-in-depth at repository level
+                const deletedCount = await emailService.deleteEmailsByAccount(accountId, userAccountIds);
                 res.json({
                     success: true,
                     message: `Deleted ${deletedCount} emails for ${email}`,
@@ -240,7 +293,7 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
                 break;
 
             case 'count':
-                const emailCount = await emailService.getEmailCountByAccount(email);
+                const emailCount = await emailService.getEmailCountByAccount(accountId, userAccountIds);
                 res.json({
                     success: true,
                     message: `Found ${emailCount} emails for ${email}`,
@@ -249,7 +302,7 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
                 break;
 
             case 'reindex':
-                const deletedForReindex = await emailService.deleteEmailsByAccount(email);
+                const deletedForReindex = await emailService.deleteEmailsByAccount(accountId, userAccountIds);
                 console.log(`🗑️ Deleted ${deletedForReindex} existing emails for ${email}`);
 
                 const reindexedEmails = await fetchGmailMessages(email, daysBack, 100, true);
@@ -279,12 +332,58 @@ export const manageEmailIndex = async (req: Request, res: Response) => {
 
 export const getIndexStats = async (req: Request, res: Response) => {
     try {
-        const stats = await emailService.getAccountStats();
+        const userAccountIds = (req as any).userAccountIds || [];
+        const stats = await emailService.getAccountStats(userAccountIds);
         res.json(stats);
     } catch (error) {
         console.error('Failed to get index stats:', error);
         res.status(500).json({
             error: 'Failed to get index stats',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+};
+
+/**
+ * Manually sync PostgreSQL to Elasticsearch
+ * Fixes sync issues by re-syncing all user's emails
+ */
+export const syncToElasticsearch = async (req: Request, res: Response) => {
+    try {
+        const userAccountIds = (req as any).userAccountIds || [];
+        const userId = (req as any).userId;
+
+        if (!userId || userAccountIds.length === 0) {
+            return res.status(400).json({
+                error: 'No email accounts found',
+                message: 'Please connect an email account first'
+            });
+        }
+
+        console.log(`[User ${userId}] Starting manual sync to Elasticsearch for ${userAccountIds.length} accounts...`);
+
+        const result = await emailService.searchEmails('', {
+            userAccountIds
+        }, {
+            page: 1,
+            limit: 10000 
+        });
+
+        const { indexed, skipped } = await emailService.bulkSyncToElasticsearch(result.emails);
+
+        console.log(`[User ${userId}] Sync complete: ${indexed} indexed, ${skipped} skipped`);
+
+        res.json({
+            success: true,
+            message: `Successfully synced ${indexed} emails to search index`,
+            indexed,
+            skipped,
+            total: result.total
+        });
+    } catch (error) {
+        console.error('Failed to sync to Elasticsearch:', error);
+        res.status(500).json({
+            error: 'Sync failed',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
     }
